@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2018, 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2018-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -150,6 +150,9 @@ int kbase_hwcnt_metadata_create(const struct kbase_hwcnt_description *desc,
 
 void kbase_hwcnt_metadata_destroy(const struct kbase_hwcnt_metadata *metadata)
 {
+	if (!metadata)
+		return;
+
 	kfree(metadata);
 }
 
@@ -291,8 +294,7 @@ void kbase_hwcnt_dump_buffer_zero(struct kbase_hwcnt_dump_buffer *dst,
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
 		u64 *dst_blk;
 		size_t val_cnt;
 
@@ -330,9 +332,10 @@ void kbase_hwcnt_dump_buffer_zero_non_enabled(struct kbase_hwcnt_dump_buffer *ds
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
-		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, grp, blk, blk_inst);
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
+		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, blk, blk_inst);
+		blk_stt_t *dst_blk_stt =
+			kbase_hwcnt_dump_buffer_block_state_instance(dst, blk, blk_inst);
 		const u64 *blk_em =
 			kbase_hwcnt_enable_map_block_instance(dst_enable_map, grp, blk, blk_inst);
 		size_t val_cnt = kbase_hwcnt_metadata_block_values_count(metadata, grp, blk);
@@ -366,8 +369,7 @@ void kbase_hwcnt_dump_buffer_copy(struct kbase_hwcnt_dump_buffer *dst,
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
 		u64 *dst_blk;
 		const u64 *src_blk;
 		size_t val_cnt;
@@ -382,8 +384,7 @@ void kbase_hwcnt_dump_buffer_copy(struct kbase_hwcnt_dump_buffer *dst,
 		kbase_hwcnt_dump_buffer_block_copy(dst_blk, src_blk, val_cnt);
 	}
 
-	kbase_hwcnt_metadata_for_each_clock(metadata, clk)
-	{
+	kbase_hwcnt_metadata_for_each_clock(metadata, clk) {
 		if (kbase_hwcnt_clk_enable_map_enabled(dst_enable_map->clk_enable_map, clk))
 			dst->clk_cnt_buf[clk] = src->clk_cnt_buf[clk];
 	}
@@ -404,11 +405,13 @@ void kbase_hwcnt_dump_buffer_copy_strict(struct kbase_hwcnt_dump_buffer *dst,
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
-		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, grp, blk, blk_inst);
-		const u64 *src_blk =
-			kbase_hwcnt_dump_buffer_block_instance(src, grp, blk, blk_inst);
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
+		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, blk, blk_inst);
+		const u64 *src_blk = kbase_hwcnt_dump_buffer_block_instance(src, blk, blk_inst);
+		blk_stt_t *dst_blk_stt =
+			kbase_hwcnt_dump_buffer_block_state_instance(dst, blk, blk_inst);
+		const blk_stt_t *src_blk_stt =
+			kbase_hwcnt_dump_buffer_block_state_instance(src, blk, blk_inst);
 		const u64 *blk_em =
 			kbase_hwcnt_enable_map_block_instance(dst_enable_map, grp, blk, blk_inst);
 		size_t val_cnt = kbase_hwcnt_metadata_block_values_count(metadata, grp, blk);
@@ -419,8 +422,7 @@ void kbase_hwcnt_dump_buffer_copy_strict(struct kbase_hwcnt_dump_buffer *dst,
 		kbase_hwcnt_dump_buffer_block_copy_strict(dst_blk, src_blk, blk_em, val_cnt);
 	}
 
-	kbase_hwcnt_metadata_for_each_clock(metadata, clk)
-	{
+	kbase_hwcnt_metadata_for_each_clock(metadata, clk) {
 		bool clk_enabled =
 			kbase_hwcnt_clk_enable_map_enabled(dst_enable_map->clk_enable_map, clk);
 
@@ -443,8 +445,7 @@ void kbase_hwcnt_dump_buffer_accumulate(struct kbase_hwcnt_dump_buffer *dst,
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
 		u64 *dst_blk;
 		const u64 *src_blk;
 		size_t hdr_cnt;
@@ -461,8 +462,7 @@ void kbase_hwcnt_dump_buffer_accumulate(struct kbase_hwcnt_dump_buffer *dst,
 		kbase_hwcnt_dump_buffer_block_accumulate(dst_blk, src_blk, hdr_cnt, ctr_cnt);
 	}
 
-	kbase_hwcnt_metadata_for_each_clock(metadata, clk)
-	{
+	kbase_hwcnt_metadata_for_each_clock(metadata, clk) {
 		if (kbase_hwcnt_clk_enable_map_enabled(dst_enable_map->clk_enable_map, clk))
 			dst->clk_cnt_buf[clk] += src->clk_cnt_buf[clk];
 	}
@@ -483,11 +483,9 @@ void kbase_hwcnt_dump_buffer_accumulate_strict(struct kbase_hwcnt_dump_buffer *d
 
 	metadata = dst->metadata;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst)
-	{
-		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, grp, blk, blk_inst);
-		const u64 *src_blk =
-			kbase_hwcnt_dump_buffer_block_instance(src, grp, blk, blk_inst);
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
+		u64 *dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, blk, blk_inst);
+		const u64 *src_blk = kbase_hwcnt_dump_buffer_block_instance(src, blk, blk_inst);
 		const u64 *blk_em =
 			kbase_hwcnt_enable_map_block_instance(dst_enable_map, grp, blk, blk_inst);
 		size_t hdr_cnt = kbase_hwcnt_metadata_block_headers_count(metadata, grp, blk);
@@ -501,11 +499,34 @@ void kbase_hwcnt_dump_buffer_accumulate_strict(struct kbase_hwcnt_dump_buffer *d
 								ctr_cnt);
 	}
 
-	kbase_hwcnt_metadata_for_each_clock(metadata, clk)
-	{
+	kbase_hwcnt_metadata_for_each_clock(metadata, clk) {
 		if (kbase_hwcnt_clk_enable_map_enabled(dst_enable_map->clk_enable_map, clk))
 			dst->clk_cnt_buf[clk] += src->clk_cnt_buf[clk];
 		else
 			dst->clk_cnt_buf[clk] = 0;
+	}
+}
+
+void kbase_hwcnt_dump_buffer_block_state_update(struct kbase_hwcnt_dump_buffer *dst,
+						const struct kbase_hwcnt_enable_map *dst_enable_map,
+						blk_stt_t blk_stt_val)
+{
+	const struct kbase_hwcnt_metadata *metadata;
+	size_t blk, blk_inst;
+
+	if (WARN_ON(!dst) || WARN_ON(!dst_enable_map) ||
+	    WARN_ON(dst->metadata != dst_enable_map->metadata))
+		return;
+
+	metadata = dst->metadata;
+
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
+		if (kbase_hwcnt_metadata_block_instance_avail(metadata, blk, blk_inst) &&
+		    kbase_hwcnt_enable_map_block_enabled(dst_enable_map, blk, blk_inst)) {
+			blk_stt_t *dst_blk_stt =
+				kbase_hwcnt_dump_buffer_block_state_instance(dst, blk, blk_inst);
+
+			*dst_blk_stt |= blk_stt_val;
+		}
 	}
 }

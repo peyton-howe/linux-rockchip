@@ -18,10 +18,6 @@
 		ethernet1 = &r8125_u12;
 	};
 
-	system {
-		cpu,model = "Rockchip RK3588";
-	};
-
 	/* If hdmirx node is disabled, delete the reserved-memory node here. */
 	reserved-memory {
 		#address-cells = <2>;
@@ -61,11 +57,11 @@
 		simple-audio-card,hp-pin-name = "Headphone Jack";
 
 		simple-audio-card,widgets =
-			"Headphone", "Headphone Jack",
+			"Headphone", "Headphones",
 			"Microphone", "Microphone Jack";
 		simple-audio-card,routing =
-			"Headphone Jack", "HPOL",
-			"Headphone Jack", "HPOR",
+			"Headphones", "HPOL",
+			"Headphones", "HPOR",
 			"MIC1", "Microphone Jack",
 			"Microphone Jack", "micbias1";
 
@@ -81,8 +77,10 @@
 		status = "okay";
 		compatible = "pwm-fan";
 		#cooling-cells = <2>;
+		fan-supply = <&vcc5v0_sys>;
 		pwms = <&pwm1 0 50000 0>;
-		cooling-levels = <0 50 100 150 200 255>;
+		cooling-levels = <0 35 64 100 150 255>;
+		rockchip,hold-time-ms = <2000>;
 		rockchip,temp-trips = <
 			50000	1
 			55000	2
@@ -212,9 +210,9 @@
 };
 
 &hdmi0 {
+	cec-enable = "true";
 	enable-gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_HIGH>;
 	status = "okay";
-	cec-enable = "true";
 };
 
 &hdmi0_in_vp0 {
@@ -234,9 +232,9 @@
 };
 
 &hdmi1 {
+	cec-enable = "true";
 	enable-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
 	status = "okay";
-	cec-enable = "true";
 };
 
 &hdmi1_in_vp0 {
@@ -264,6 +262,7 @@
 	status = "okay";
 
 	#sound-dai-cells = <1>;
+	edid-version = <3>;
 	/* Effective level used to trigger HPD: 0-low, 1-high */
 	hpd-trigger-level = <1>;
 	hdmirx-det-gpios = <&gpio1 RK_PD5 GPIO_ACTIVE_LOW>;
@@ -472,6 +471,8 @@
 };
 
 &pcie3x4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie30x4_clkreqn_m1>;
 	reset-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
 	status = "okay";
@@ -564,6 +565,10 @@
 
 		pcie_m2_1_pwren: pcie-m21-pwren {
 			rockchip,pins = <4 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		pcie30x4_clkreqn_m1: pcie30x4-clkreqn-m1 {
+			rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
 	};
 
@@ -719,58 +724,9 @@
 	gpio = <&gpio4 RK_PA5 GPIO_ACTIVE_LOW>;
 };
 
+
 &display_subsystem {
 	clocks = <&hdptxphy_hdmi0>, <&hdptxphy_hdmi1>;
 	clock-names = "hdmi0_phy_pll", "hdmi1_phy_pll";
-
-	route {
-		route_hdmi0: route-hdmi0 {
-			status = "okay";
-			logo,uboot = "logo.bmp";
-			logo,kernel = "logo_kernel.bmp";
-			logo,mode = "center";
-			charge_logo,mode = "center";
-			connect = <&vp0_out_hdmi0>;
-		};
-
-		route_hdmi1: route-hdmi1 {
-			status = "okay";
-			logo,uboot = "logo.bmp";
-			logo,kernel = "logo_kernel.bmp";
-			logo,mode = "center";
-			charge_logo,mode = "center";
-			connect = <&vp1_out_hdmi1>;
-		};
-	};
 };
 
-&route_dp0 {
-	status = "okay";
-	connect = <&vp2_out_dp0>;
-};
-
-&vp0 {
-	rockchip,plane-mask = <(1 << ROCKCHIP_VOP2_CLUSTER0 | 1 << ROCKCHIP_VOP2_ESMART0 |
-				1 << ROCKCHIP_VOP2_CLUSTER1)>;
-	rockchip,primary-plane = <ROCKCHIP_VOP2_CLUSTER0>;
-	cursor-win-id = <ROCKCHIP_VOP2_ESMART0>;
-};
-
-&vp1 {
-	rockchip,plane-mask = <(1 << ROCKCHIP_VOP2_CLUSTER2 | 1 << ROCKCHIP_VOP2_ESMART1 |
-				1 << ROCKCHIP_VOP2_ESMART2)>;
-	rockchip,primary-plane = <ROCKCHIP_VOP2_CLUSTER2>;
-	cursor-win-id = <ROCKCHIP_VOP2_ESMART1>;
-};
-
-&vp2 {
-	rockchip,plane-mask = <(1 << ROCKCHIP_VOP2_CLUSTER3 | 1 << ROCKCHIP_VOP2_ESMART3)>;
-	rockchip,primary-plane = <ROCKCHIP_VOP2_CLUSTER3>;
-	cursor-win-id = <ROCKCHIP_VOP2_ESMART3>;
-};
-
-&vp3 {
-	/delete-property/ rockchip,plane-mask;
-	/delete-property/ rockchip,primary-plane;
-	status = "disabled";
-};

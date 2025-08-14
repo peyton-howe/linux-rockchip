@@ -135,8 +135,8 @@ void kbase_io_history_dump(struct kbase_device *kbdev)
 			&h->buf[(h->count - iters + i) % h->size];
 		char const access = (io->addr & 1) ? 'w' : 'r';
 
-		dev_err(kbdev->dev, "%6zu: %c: reg 0x%016lx val %08x\n", i,
-			access, (unsigned long)(io->addr & ~0x1), io->value);
+		dev_err(kbdev->dev, "%6zu: %c: reg 0x%16pK val %08x\n", i, access,
+			(void *)(io->addr & ~(uintptr_t)0x1), io->value);
 	}
 
 	spin_unlock_irqrestore(&h->lock, flags);
@@ -193,8 +193,8 @@ static int regs_history_show(struct seq_file *sfile, void *data)
 			&h->buf[(h->count - iters + i) % h->size];
 		char const access = (io->addr & 1) ? 'w' : 'r';
 
-		seq_printf(sfile, "%6zu: %c: reg 0x%016lx val %08x\n", i,
-			   access, (unsigned long)(io->addr & ~0x1), io->value);
+		seq_printf(sfile, "%6zu: %c: reg 0x%16pK val %08x\n", i, access,
+			   (void *)(io->addr & ~(uintptr_t)0x1), io->value);
 	}
 
 	spin_unlock_irqrestore(&h->lock, flags);

@@ -32,6 +32,7 @@
 #include <linux/version.h>
 #include <linux/delay.h>
 #include <soc/rockchip/rockchip_opp_select.h>
+#include <soc/rockchip/rockchip_sip.h>
 #include <soc/rockchip/rockchip_system_monitor.h>
 #include <soc/rockchip/rockchip-system-status.h>
 #ifdef CONFIG_ROCKCHIP_EARLYSUSPEND
@@ -75,11 +76,14 @@ struct system_monitor {
 
 	struct thermal_zone_device *tz;
 	struct delayed_work thermal_work;
+	struct temp_freq_table *temp_ddr_ref_mode;
 	int last_temp;
 	int offline_cpus_temp;
 	int temp_hysteresis;
 	unsigned int delay;
 	bool is_temp_offline;
+
+	int (*ddr_trefi_update)(u32 ref_mode);
 };
 
 static unsigned long system_status;
@@ -648,10 +652,10 @@ static int rockchip_init_temp_opp_table(struct monitor_dev_info *info)
 		return -ENOMEM;
 
 	opp_table = dev_pm_opp_get_opp_table(dev);
-	if (!opp_table) {
+	if (IS_ERR(opp_table)) {
 		kfree(info->opp_table);
 		info->opp_table = NULL;
-		return -ENOMEM;
+		return PTR_ERR(opp_table);
 	}
 	mutex_lock(&opp_table->lock);
 	list_for_each_entry(opp, &opp_table->opp_list, node) {
@@ -989,8 +993,8 @@ static int rockchip_adjust_low_temp_opp_volt(struct monitor_dev_info *info,
 	int i = 0;
 
 	opp_table = dev_pm_opp_get_opp_table(dev);
-	if (!opp_table)
-		return -ENOMEM;
+	if (IS_ERR(opp_table))
+		return PTR_ERR(opp_table);
 
 	mutex_lock(&opp_table->lock);
 	list_for_each_entry(opp, &opp_table->opp_list, node) {
@@ -1088,19 +1092,8 @@ static void rockchip_high_temp_adjust(struct monitor_dev_info *info,
 	}
 }
 
-int rockchip_monitor_suspend_low_temp_adjust(int cpu)
+static int rockchip_monitor_low_temp_adjust(struct monitor_dev_info *info)
 {
-	struct monitor_dev_info *info = NULL, *tmp;
-
-	list_for_each_entry(tmp, &monitor_dev_list, node) {
-		if (tmp->devp->type != MONITOR_TYPE_CPU)
-			continue;
-		if (cpumask_test_cpu(cpu, &tmp->devp->allowed_cpus)) {
-			info = tmp;
-			break;
-		}
-	}
-
 	if (!info || !info->is_low_temp_enabled)
 		return 0;
 
@@ -1114,6 +1107,24 @@ int rockchip_monitor_suspend_low_temp_adjust(int cpu)
 		rockchip_low_temp_adjust(info, true);
 
 	return 0;
+}
+
+int rockchip_monitor_suspend_low_temp_adjust(int cpu)
+{
+	struct monitor_dev_info *info = NULL, *tmp;
+
+	down_read(&mdev_list_sem);
+	list_for_each_entry(tmp, &monitor_dev_list, node) {
+		if (tmp->devp->type != MONITOR_TYPE_CPU)
+			continue;
+		if (cpumask_test_cpu(cpu, &tmp->devp->allowed_cpus)) {
+			info = tmp;
+			break;
+		}
+	}
+	up_read(&mdev_list_sem);
+
+	return rockchip_monitor_low_temp_adjust(info);
 }
 EXPORT_SYMBOL(rockchip_monitor_suspend_low_temp_adjust);
 
@@ -1497,6 +1508,8 @@ static int rockchip_system_monitor_parse_dt(struct system_monitor *monitor)
 		system_monitor->offline_cpus_temp = INT_MAX;
 	of_property_read_u32(np, "rockchip,temp-hysteresis",
 			     &system_monitor->temp_hysteresis);
+	rockchip_get_temp_freq_table(np, "rockchip,temp-ddr-ref-mode",
+				     &system_monitor->temp_ddr_ref_mode);
 
 	if (of_find_property(np, "rockchip,thermal-governor-dummy", NULL)) {
 		if (monitor->tz->governor->unbind_from_tz)
@@ -1507,6 +1520,30 @@ static int rockchip_system_monitor_parse_dt(struct system_monitor *monitor)
 out:
 	return 0;
 }
+
+#ifdef CONFIG_HOTPLUG_CPU
+static void rockchip_system_monitor_first_cpu_online(struct cpumask *online_cpus)
+{
+	struct monitor_dev_info *tmp;
+	struct cpumask tmp_mask;
+
+	down_read(&mdev_list_sem);
+	list_for_each_entry(tmp, &monitor_dev_list, node) {
+		if (tmp->devp->type != MONITOR_TYPE_CPU)
+			continue;
+		/* Check if all allowed cpus of the cluster are offline */
+		cpumask_and(&tmp_mask, &tmp->devp->allowed_cpus, cpu_online_mask);
+		if (!cpumask_empty(&tmp_mask))
+			continue;
+		/* Check if the online cpus contain one allowed cpu of the cluster */
+		cpumask_and(&tmp_mask, &tmp->devp->allowed_cpus, online_cpus);
+		if (cpumask_empty(&tmp_mask))
+			continue;
+		rockchip_monitor_low_temp_adjust(tmp);
+	}
+	up_read(&mdev_list_sem);
+}
+#endif
 
 static void rockchip_system_monitor_cpu_on_off(void)
 {
@@ -1538,6 +1575,7 @@ static void rockchip_system_monitor_cpu_on_off(void)
 	cpumask_xor(&online_cpus, cpu_online_mask, &online_cpus);
 	if (cpumask_empty(&online_cpus))
 		goto out;
+	rockchip_system_monitor_first_cpu_online(&online_cpus);
 	for_each_cpu(cpu, &online_cpus)
 		add_cpu(cpu);
 
@@ -1567,6 +1605,26 @@ static void rockchip_system_monitor_temp_cpu_on_off(int temp)
 	rockchip_system_monitor_cpu_on_off();
 }
 
+static void rockchip_system_monitor_temp_ddr_ref_mode(int temp)
+{
+	unsigned int i, new_ref_mode = 0;
+	static unsigned int last_ref_mode;
+
+	if (!system_monitor->temp_ddr_ref_mode)
+		return;
+	if (!system_monitor->ddr_trefi_update)
+		return;
+
+	for (i = 0; system_monitor->temp_ddr_ref_mode[i].freq != UINT_MAX; i++) {
+		if (temp > system_monitor->temp_ddr_ref_mode[i].temp)
+			new_ref_mode = system_monitor->temp_ddr_ref_mode[i].freq;
+	}
+	if (new_ref_mode && (new_ref_mode != last_ref_mode)) {
+		system_monitor->ddr_trefi_update(new_ref_mode);
+		last_ref_mode = new_ref_mode;
+	}
+}
+
 static void rockchip_system_monitor_thermal_update(void)
 {
 	int temp, ret;
@@ -1591,6 +1649,7 @@ static void rockchip_system_monitor_thermal_update(void)
 	up_read(&mdev_list_sem);
 
 	rockchip_system_monitor_temp_cpu_on_off(temp);
+	rockchip_system_monitor_temp_ddr_ref_mode(temp);
 
 out:
 	mod_delayed_work(system_freezable_wq, &system_monitor->thermal_work,
@@ -1689,6 +1748,7 @@ static int rockchip_system_monitor_set_cpu_uevent_suppress(bool is_suppress)
 	struct monitor_dev_info *info;
 	struct cpufreq_policy *policy;
 
+	down_read(&mdev_list_sem);
 	list_for_each_entry(info, &monitor_dev_list, node) {
 		if (info->devp->type != MONITOR_TYPE_CPU)
 			continue;
@@ -1700,6 +1760,7 @@ static int rockchip_system_monitor_set_cpu_uevent_suppress(bool is_suppress)
 		else
 			dev_set_uevent_suppress(&policy->cdev->device, 0);
 	}
+	up_read(&mdev_list_sem);
 
 	return 0;
 }
@@ -1825,9 +1886,41 @@ static void system_monitor_early_min_volt_function(struct work_struct *work)
 static DECLARE_DELAYED_WORK(system_monitor_early_min_volt_work,
 			    system_monitor_early_min_volt_function);
 
+static int system_monitor_ddr_trefi_update(u32 ref_mode)
+{
+	struct arm_smccc_res res;
+
+	res = sip_smc_dram(0, ref_mode,
+			   ROCKCHIP_SIP_CONFIG_DRAM_TREFI_UPD);
+	if (res.a0 || res.a1) {
+		pr_err("rockchip_sip_config_dram_trefi_upd error:%lx\n", res.a0);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static __maybe_unused int rk3506_system_monitor_init(struct platform_device *pdev)
+{
+	system_monitor->ddr_trefi_update = system_monitor_ddr_trefi_update;
+
+	return 0;
+}
+
+static const struct of_device_id rockchip_system_monitor_of_match[] = {
+	{ .compatible = "rockchip,system-monitor", .data = NULL },
+#if IS_ENABLED(CONFIG_CPU_RK3506)
+	{ .compatible = "rk3506,system-monitor", .data = rk3506_system_monitor_init },
+#endif
+	{ /* sentinel */ },
+};
+MODULE_DEVICE_TABLE(of, rockchip_system_monitor_of_match);
+
 static int rockchip_system_monitor_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	const struct of_device_id *match;
+	int (*init)(struct platform_device *pdev);
 
 	system_monitor = devm_kzalloc(dev, sizeof(struct system_monitor),
 				      GFP_KERNEL);
@@ -1849,6 +1942,13 @@ static int rockchip_system_monitor_probe(struct platform_device *pdev)
 	cpumask_clear(&system_monitor->offline_cpus);
 
 	rockchip_system_monitor_parse_dt(system_monitor);
+
+	match = of_match_device(rockchip_system_monitor_of_match, &pdev->dev);
+	if (match && match->data) {
+		init = match->data;
+		init(pdev);
+	}
+
 	if (system_monitor->tz) {
 		system_monitor->last_temp = INT_MAX;
 		INIT_DELAYED_WORK(&system_monitor->thermal_work,
@@ -1883,14 +1983,6 @@ static int rockchip_system_monitor_probe(struct platform_device *pdev)
 
 	return 0;
 }
-
-static const struct of_device_id rockchip_system_monitor_of_match[] = {
-	{
-		.compatible = "rockchip,system-monitor",
-	},
-	{ /* sentinel */ },
-};
-MODULE_DEVICE_TABLE(of, rockchip_system_monitor_of_match);
 
 static struct platform_driver rockchip_system_monitor_driver = {
 	.probe	= rockchip_system_monitor_probe,

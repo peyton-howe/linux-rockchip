@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) Fuzhou Rockchip Electronics Co.Ltd
+ * Copyright (C) Rockchip Electronics Co., Ltd.
  * Author:Mark Yao <mark.yao@rock-chips.com>
  */
 
@@ -199,17 +199,21 @@ static int rockchip_drm_aclk_adjust(struct drm_device *dev,
 
 		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
 		if (funcs && funcs->set_aclk) {
+			struct drm_display_mode *mode = &crtc->state->adjusted_mode;
+			int linedur_ns = div_u64((u64) mode->crtc_htotal * 1000000, mode->crtc_clock);
+
 			if (vop_bw_info->plane_num_4k || crtc_num > 1 ||
 			    crtc->state->adjusted_mode.crtc_hdisplay > 2560 ||
-			    crtc->state->adjusted_mode.crtc_vdisplay > 2560) {
-				funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE);
+			    crtc->state->adjusted_mode.crtc_vdisplay > 2560 ||
+			    linedur_ns < 7500) {/* 4kp60 linedur_ns roughly equal to 7500 ns */
+				funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE, vop_bw_info);
 				priv->aclk_adjust_frame_num = 2;
 			} else {
 				if (priv->aclk_adjust_frame_num >= 1) {
-					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE);
+					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE, vop_bw_info);
 					priv->aclk_adjust_frame_num--;
 				} else {
-					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE);
+					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE, vop_bw_info);
 				}
 			}
 		}

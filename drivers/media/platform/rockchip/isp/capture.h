@@ -303,6 +303,7 @@ struct rkisp_stream {
 	bool is_using_resmem;
 	bool frame_early;
 	bool need_scl_upd;
+	bool is_attach_info;
 	wait_queue_head_t done;
 	unsigned int burst;
 	atomic_t sequence;
@@ -345,6 +346,7 @@ extern struct stream_config rkisp_mp_stream_config;
 extern struct stream_config rkisp_sp_stream_config;
 extern struct rockit_isp_ops rockit_isp_ops;
 
+void rkisp_stream_vir_cpy_image(struct work_struct *work);
 void rkisp_stream_buf_done_early(struct rkisp_device *dev);
 void rkisp_stream_buf_done(struct rkisp_stream *stream,
 			   struct rkisp_buffer *buf);

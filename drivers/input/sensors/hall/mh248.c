@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Bin Yang <yangbin@rock-chips.com>
  */
@@ -275,6 +275,7 @@ static int mh248_resume(struct device *dev)
 
 	if (mem_sleep_current == PM_SUSPEND_MEM_ULTRA) {
 		if (g_mh248->is_hall_wakeup) {
+			g_mh248->is_hall_wakeup = 0;
 			gpio_value = gpio_get_value(g_mh248->gpio_pin);
 			if ((gpio_value == g_mh248->active_value) &&
 				(g_mh248->is_suspend == 1)) {

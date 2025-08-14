@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2022-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2022-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -28,6 +28,9 @@
 #include <mali_kbase_mem_migrate.h>
 #include <mmu/mali_kbase_mmu.h>
 
+/* Static key used to determine if page migration is enabled or not */
+static DEFINE_STATIC_KEY_FALSE(page_migration_static_key);
+
 /* Global integer used to determine if module parameter value has been
  * provided and if page migration feature is enabled.
  * Feature is disabled on all platforms by default.
@@ -46,6 +49,19 @@ bool kbase_alloc_page_metadata(struct kbase_device *kbdev, struct page *p, dma_a
 	struct kbase_page_metadata *page_md =
 		kzalloc(sizeof(struct kbase_page_metadata), GFP_KERNEL);
 
+	/* A check for kbase_page_migration_enabled would help here too but it's already being
+	 * checked in the only caller of this function.
+	 */
+	if (!IS_ENABLED(CONFIG_PAGE_MIGRATION_SUPPORT))
+		return false;
+
+	/* Composite large-page is excluded from migration, trigger a warn if a development
+	 * wrongly leads to it.
+	 */
+	if (is_huge_head(as_tagged(page_to_phys(p))) || is_partial(as_tagged(page_to_phys(p))))
+		dev_WARN(kbdev->dev, "%s: migration-metadata attempted on large-page.", __func__);
+
+	page_md = kzalloc(sizeof(struct kbase_page_metadata), GFP_KERNEL);
 	if (!page_md)
 		return false;
 
@@ -182,7 +198,7 @@ static int kbasep_migrate_page_pt_mapped(struct page *old_page, struct page *new
 	 * This blocks the CPU page fault handler from remapping pages.
 	 * Only MCU's mmut is device wide, i.e. no corresponding kctx.
 	 */
-	kbase_gpu_vm_lock(kctx);
+	kbase_gpu_vm_lock_with_pmode_sync(kctx);
 
 	ret = kbase_mmu_migrate_page(
 		as_tagged(page_to_phys(old_page)), as_tagged(page_to_phys(new_page)), old_dma_addr,
@@ -211,7 +227,7 @@ static int kbasep_migrate_page_pt_mapped(struct page *old_page, struct page *new
 		dma_unmap_page(kbdev->dev, new_dma_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	/* Page fault handler for CPU mapping unblocked. */
-	kbase_gpu_vm_unlock(kctx);
+	kbase_gpu_vm_unlock_with_pmode_sync(kctx);
 
 	return ret;
 }
@@ -245,10 +261,12 @@ static int kbasep_migrate_page_allocated_mapped(struct page *old_page, struct pa
 	/* Lock context to protect access to array of pages in physical allocation.
 	 * This blocks the CPU page fault handler from remapping pages.
 	 */
-	kbase_gpu_vm_lock(kctx);
+	kbase_gpu_vm_lock_with_pmode_sync(kctx);
 
 	/* Unmap the old physical range. */
-	unmap_mapping_range(kctx->filp->f_inode->i_mapping, page_md->data.mapped.vpfn << PAGE_SHIFT,
+	unmap_mapping_range(kctx->filp->f_inode->i_mapping,
+			    (loff_t)(page_md->data.mapped.vpfn / GPU_PAGES_PER_CPU_PAGE)
+				    << PAGE_SHIFT,
 			    PAGE_SIZE, 1);
 
 	ret = kbase_mmu_migrate_page(as_tagged(page_to_phys(old_page)),
@@ -282,7 +300,7 @@ static int kbasep_migrate_page_allocated_mapped(struct page *old_page, struct pa
 		dma_unmap_page(kctx->kbdev->dev, new_dma_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	/* Page fault handler for CPU mapping unblocked. */
-	kbase_gpu_vm_unlock(kctx);
+	kbase_gpu_vm_unlock_with_pmode_sync(kctx);
 
 	return ret;
 }
@@ -615,8 +633,21 @@ void kbase_mem_migrate_init(struct kbase_device *kbdev)
 {
 	struct kbase_mem_migrate *mem_migrate = &kbdev->mem_migrate;
 
-	if (kbase_page_migration_enabled < 0)
-		kbase_page_migration_enabled = 0;
+	/* Page migration support compiled in, either explicitly or
+	 * by default, so the default behaviour is to follow the choice
+	 * of large pages if not selected at insmod. Check insmod parameter
+	 * integer for a negative value to see if insmod parameter was
+	 * passed in at all (it will override the default negative value).
+	 */
+	if (kbase_page_migration_enabled < 0) {
+		if (kbase_is_large_pages_enabled())
+			static_branch_inc(&page_migration_static_key);
+	} else {
+		dev_info(kbdev->dev, "Page migration support explicitly %s at insmod.",
+			 kbase_page_migration_enabled ? "enabled" : "disabled");
+		if (kbase_page_migration_enabled)
+			static_branch_inc(&page_migration_static_key);
+	}
 
 	spin_lock_init(&mem_migrate->free_pages_lock);
 	INIT_LIST_HEAD(&mem_migrate->free_pages_list);
@@ -639,3 +670,9 @@ void kbase_mem_migrate_term(struct kbase_device *kbdev)
 	iput(mem_migrate->inode);
 #endif
 }
+
+bool kbase_is_page_migration_enabled(void)
+{
+	return static_branch_unlikely(&page_migration_static_key);
+}
+KBASE_EXPORT_TEST_API(kbase_is_page_migration_enabled);

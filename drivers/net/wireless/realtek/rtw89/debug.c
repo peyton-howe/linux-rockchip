@@ -531,8 +531,6 @@ static int __print_txpwr_map(struct seq_file *m, struct rtw89_dev *rtwdev,
 			     const struct txpwr_map *map)
 {
 	u8 fct = rtwdev->chip->txpwr_factor_mac;
-	u8 path_num = rtwdev->chip->rf_path_num;
-	u32 max_valid_addr;
 	u32 val, addr;
 	s8 *buf, tmp;
 	u8 cur, i;
@@ -3034,18 +3032,17 @@ static ssize_t rtw89_debug_priv_send_h2c_set(struct file *filp,
 	struct rtw89_debugfs_priv *debugfs_priv = filp->private_data;
 	struct rtw89_dev *rtwdev = debugfs_priv->rtwdev;
 	u8 *h2c;
-	int ret;
 	u16 h2c_len = count / 2;
 
 	h2c = rtw89_hex2bin_user(rtwdev, user_buf, count);
 	if (IS_ERR(h2c))
 		return -EFAULT;
 
-	ret = rtw89_fw_h2c_raw(rtwdev, h2c, h2c_len);
+	rtw89_fw_h2c_raw(rtwdev, h2c, h2c_len);
 
 	kfree(h2c);
 
-	return ret ? ret : count;
+	return count;
 }
 
 static int
@@ -3292,7 +3289,7 @@ static void rtw89_sta_info_get_iter(void *data, struct ieee80211_sta *sta)
 	case RX_ENC_HE:
 		seq_printf(m, "HE %dSS MCS-%d GI:%s", status->nss, status->rate_idx,
 			   status->he_gi <= NL80211_RATE_INFO_HE_GI_3_2 ?
-			   he_gi_str[rate->he_gi] : "N/A");
+			   he_gi_str[status->he_gi] : "N/A");
 		break;
 	}
 	seq_printf(m, " BW:%u", rtw89_rate_info_bw_to_mhz(status->bw));

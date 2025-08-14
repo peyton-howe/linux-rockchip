@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2010-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -32,9 +32,7 @@
 #include <mali_kbase_pm.h>
 #include <backend/gpu/mali_kbase_pm_internal.h>
 
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
 #include <arbiter/mali_kbase_arbiter_pm.h>
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 
 #include <backend/gpu/mali_kbase_clk_rate_trace_mgr.h>
 
@@ -54,23 +52,21 @@ void kbase_pm_context_active(struct kbase_device *kbdev)
 		KBASE_PM_SUSPEND_HANDLER_NOT_POSSIBLE);
 }
 
-int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev,
-	enum kbase_pm_suspend_handler suspend_handler)
+int kbase_pm_context_active_handle_suspend_locked(struct kbase_device *kbdev,
+						  enum kbase_pm_suspend_handler suspend_handler)
 {
 	int c;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
-	dev_dbg(kbdev->dev, "%s - reason = %d, pid = %d\n", __func__,
-		suspend_handler, current->pid);
-	kbase_pm_lock(kbdev);
+	dev_dbg(kbdev->dev, "%s - reason = %d, pid = %d\n", __func__, suspend_handler,
+		current->pid);
+	lockdep_assert_held(&kbdev->pm.lock);
 
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbase_arbiter_pm_ctx_active_handle_suspend(kbdev,
-			suspend_handler)) {
-		kbase_pm_unlock(kbdev);
+	/* If there is an Arbiter, wait for Arbiter to grant GPU back to KBase
+	 * so suspend request can be handled.
+	 */
+	if (kbase_arbiter_pm_ctx_active_handle_suspend(kbdev, suspend_handler))
 		return 1;
-	}
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 
 	if (kbase_pm_is_suspending(kbdev)) {
 		switch (suspend_handler) {
@@ -79,7 +75,6 @@ int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev,
 				break;
 			fallthrough;
 		case KBASE_PM_SUSPEND_HANDLER_DONT_INCREASE:
-			kbase_pm_unlock(kbdev);
 			return 1;
 
 		case KBASE_PM_SUSPEND_HANDLER_NOT_POSSIBLE:
@@ -90,38 +85,45 @@ int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev,
 		}
 	}
 	c = ++kbdev->pm.active_count;
-	KBASE_KTRACE_ADD(kbdev, PM_CONTEXT_ACTIVE, NULL, c);
+	KBASE_KTRACE_ADD(kbdev, PM_CONTEXT_ACTIVE, NULL, (u64)c);
 
 	if (c == 1) {
 		/* First context active: Power on the GPU and
 		 * any cores requested by the policy
 		 */
 		kbase_hwaccess_pm_gpu_active(kbdev);
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
 		kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_REF_EVENT);
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 		kbase_clk_rate_trace_manager_gpu_active(kbdev);
 	}
 
-	kbase_pm_unlock(kbdev);
 	dev_dbg(kbdev->dev, "%s %d\n", __func__, kbdev->pm.active_count);
 
 	return 0;
 }
 
+int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev,
+					   enum kbase_pm_suspend_handler suspend_handler)
+{
+	int ret;
+
+	kbase_pm_lock(kbdev);
+	ret = kbase_pm_context_active_handle_suspend_locked(kbdev, suspend_handler);
+	kbase_pm_unlock(kbdev);
+
+	return ret;
+}
+
 KBASE_EXPORT_TEST_API(kbase_pm_context_active);
 
-void kbase_pm_context_idle(struct kbase_device *kbdev)
+void kbase_pm_context_idle_locked(struct kbase_device *kbdev)
 {
 	int c;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
-
-
-	kbase_pm_lock(kbdev);
+	lockdep_assert_held(&kbdev->pm.lock);
 
 	c = --kbdev->pm.active_count;
-	KBASE_KTRACE_ADD(kbdev, PM_CONTEXT_IDLE, NULL, c);
+	KBASE_KTRACE_ADD(kbdev, PM_CONTEXT_IDLE, NULL, (u64)c);
 
 	KBASE_DEBUG_ASSERT(c >= 0);
 
@@ -137,12 +139,58 @@ void kbase_pm_context_idle(struct kbase_device *kbdev)
 		wake_up(&kbdev->pm.zero_active_count_wait);
 	}
 
+	dev_dbg(kbdev->dev, "%s %d (pid = %d)\n", __func__, kbdev->pm.active_count, current->pid);
+}
+
+void kbase_pm_context_idle(struct kbase_device *kbdev)
+{
+	kbase_pm_lock(kbdev);
+	kbase_pm_context_idle_locked(kbdev);
 	kbase_pm_unlock(kbdev);
-	dev_dbg(kbdev->dev, "%s %d (pid = %d)\n", __func__,
-		kbdev->pm.active_count, current->pid);
 }
 
 KBASE_EXPORT_TEST_API(kbase_pm_context_idle);
+
+static void reenable_hwcnt_on_resume(struct kbase_device *kbdev)
+{
+	unsigned long flags;
+
+	/* Re-enable GPU hardware counters */
+#if MALI_USE_CSF
+	kbase_csf_scheduler_spin_lock(kbdev, &flags);
+	kbase_hwcnt_context_enable(kbdev->hwcnt_gpu_ctx);
+	kbase_csf_scheduler_spin_unlock(kbdev, flags);
+#else
+	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+	kbase_hwcnt_context_enable(kbdev->hwcnt_gpu_ctx);
+	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+#endif
+
+	/* Resume HW counters intermediaries. */
+#if MALI_USE_CSF
+	if (kbdev->csf.firmware_inited)
+#endif
+	{
+		kbase_kinstr_prfcnt_resume(kbdev->kinstr_prfcnt_ctx);
+	}
+}
+
+static void resume_job_scheduling(struct kbase_device *kbdev)
+{
+#if !MALI_USE_CSF
+	/* Resume any blocked atoms (which may cause contexts to be scheduled in
+	 * and dependent atoms to run)
+	 */
+	kbase_resume_suspended_soft_jobs(kbdev);
+
+	/* Resume the Job Scheduler and associated components, and start running
+	 * atoms
+	 */
+	kbasep_js_resume(kbdev);
+#else
+	kbase_csf_scheduler_pm_resume(kbdev);
+#endif
+}
 
 int kbase_pm_driver_suspend(struct kbase_device *kbdev)
 {
@@ -151,8 +199,12 @@ int kbase_pm_driver_suspend(struct kbase_device *kbdev)
 	/* Suspend HW counter intermediaries. This blocks until workers and timers
 	 * are no longer running.
 	 */
-	kbase_vinstr_suspend(kbdev->vinstr_ctx);
-	kbase_kinstr_prfcnt_suspend(kbdev->kinstr_prfcnt_ctx);
+#if MALI_USE_CSF
+	if (kbdev->csf.firmware_inited)
+#endif
+	{
+		kbase_kinstr_prfcnt_suspend(kbdev->kinstr_prfcnt_ctx);
+	}
 
 	/* Disable GPU hardware counters.
 	 * This call will block until counters are disabled.
@@ -167,10 +219,15 @@ int kbase_pm_driver_suspend(struct kbase_device *kbdev)
 	kbdev->pm.suspending = true;
 	mutex_unlock(&kbdev->pm.lock);
 
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbdev->arb.arb_if) {
-		int i;
+	if (kbase_has_arbiter(kbdev)) {
 		unsigned long flags;
+
+#if MALI_USE_CSF
+		spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+		kbase_disjoint_state_up(kbdev);
+		spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+#else
+		unsigned int i;
 
 		spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 		kbdev->js_data.runpool_irq.submit_allowed = 0;
@@ -178,8 +235,8 @@ int kbase_pm_driver_suspend(struct kbase_device *kbdev)
 		for (i = 0; i < kbdev->gpu_props.num_job_slots; i++)
 			kbase_job_slot_softstop(kbdev, i, NULL);
 		spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+#endif
 	}
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 
 	/* From now on, the active count will drop towards zero. Sometimes,
 	 * it'll go up briefly before going down again. However, once
@@ -215,19 +272,22 @@ int kbase_pm_driver_suspend(struct kbase_device *kbdev)
 	 * kbase_pm_context_idle() call by locking the pm.lock below
 	 */
 	if (kbase_hwaccess_pm_suspend(kbdev)) {
-		mutex_lock(&kbdev->pm.lock);
-		kbdev->pm.suspending = false;
-		mutex_unlock(&kbdev->pm.lock);
-		return -1;
+		/* No early return yet */
+		if (kbase_has_arbiter(kbdev))
+			WARN_ON_ONCE(1);
+		else
+			goto exit;
 	}
 
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbdev->arb.arb_if) {
+	if (kbase_has_arbiter(kbdev)) {
 		mutex_lock(&kbdev->pm.arb_vm_state->vm_state_lock);
 		kbase_arbiter_pm_vm_stopped(kbdev);
 		mutex_unlock(&kbdev->pm.arb_vm_state->vm_state_lock);
 	}
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
+
+#if MALI_USE_CSF
+	kbase_backend_invalidate_gpu_timestamp_offset(kbdev);
+#endif
 
 	return 0;
 }
@@ -240,15 +300,13 @@ void kbase_pm_driver_resume(struct kbase_device *kbdev, bool arb_gpu_start)
 	kbase_hwaccess_pm_resume(kbdev);
 
 	/* Initial active call, to power on the GPU/cores if needed */
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbase_pm_context_active_handle_suspend(kbdev,
-			(arb_gpu_start ?
-				KBASE_PM_SUSPEND_HANDLER_VM_GPU_GRANTED :
-				KBASE_PM_SUSPEND_HANDLER_NOT_POSSIBLE)))
-		return;
-#else
-	kbase_pm_context_active(kbdev);
-#endif
+	if (kbase_has_arbiter(kbdev)) {
+		if (kbase_pm_context_active_handle_suspend(
+			    kbdev, (arb_gpu_start ? KBASE_PM_SUSPEND_HANDLER_VM_GPU_GRANTED :
+							  KBASE_PM_SUSPEND_HANDLER_NOT_POSSIBLE)))
+			return;
+	} else
+		kbase_pm_context_active(kbdev);
 
 #if !MALI_USE_CSF
 	/* Resume any blocked atoms (which may cause contexts to be scheduled in
@@ -286,26 +344,19 @@ void kbase_pm_driver_resume(struct kbase_device *kbdev, bool arb_gpu_start)
 int kbase_pm_suspend(struct kbase_device *kbdev)
 {
 	int result = 0;
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbdev->arb.arb_if)
+
+	if (kbase_has_arbiter(kbdev))
 		kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_OS_SUSPEND_EVENT);
 	else
 		result = kbase_pm_driver_suspend(kbdev);
-#else
-	result = kbase_pm_driver_suspend(kbdev);
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 
 	return result;
 }
 
 void kbase_pm_resume(struct kbase_device *kbdev)
 {
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
-	if (kbdev->arb.arb_if)
+	if (kbase_has_arbiter(kbdev))
 		kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_OS_RESUME_EVENT);
 	else
 		kbase_pm_driver_resume(kbdev, false);
-#else
-	kbase_pm_driver_resume(kbdev, false);
-#endif /* CONFIG_MALI_ARBITER_SUPPORT */
 }

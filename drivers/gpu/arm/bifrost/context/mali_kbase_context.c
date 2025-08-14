@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -191,32 +191,18 @@ int kbase_context_common_init(struct kbase_context *kctx)
 	INIT_LIST_HEAD(&kctx->waiting_soft_jobs);
 
 	init_waitqueue_head(&kctx->event_queue);
-	atomic_set(&kctx->event_count, 0);
-
-#if !MALI_USE_CSF
-	atomic_set(&kctx->event_closed, false);
-#if IS_ENABLED(CONFIG_GPU_TRACEPOINTS)
-	atomic_set(&kctx->jctx.work_id, 0);
-#endif
-#endif
-
-#if MALI_USE_CSF
-	atomic64_set(&kctx->num_fixable_allocs, 0);
-	atomic64_set(&kctx->num_fixed_allocs, 0);
-#endif
 
 	kbase_gpu_vm_lock(kctx);
 	bitmap_copy(kctx->cookies, &cookies_mask, BITS_PER_LONG);
 	kbase_gpu_vm_unlock(kctx);
 
-	kctx->id = atomic_add_return(1, &(kctx->kbdev->ctx_num)) - 1;
+	kctx->id = (u32)atomic_add_return(1, &(kctx->kbdev->ctx_num)) - 1;
 
 	mutex_lock(&kctx->kbdev->kctx_list_lock);
 	err = kbase_insert_kctx_to_process(kctx);
 	mutex_unlock(&kctx->kbdev->kctx_list_lock);
 	if (err) {
-		dev_err(kctx->kbdev->dev,
-			"(err:%d) failed to insert kctx to kbase_process", err);
+		dev_err(kctx->kbdev->dev, "(err:%d) failed to insert kctx to kbase_process", err);
 		if (likely(kctx->filp)) {
 			mmdrop(kctx->process_mm);
 			put_task_struct(kctx->task);

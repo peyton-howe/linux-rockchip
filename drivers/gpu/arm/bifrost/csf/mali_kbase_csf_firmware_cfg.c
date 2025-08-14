@@ -148,7 +148,7 @@ static ssize_t store_fw_cfg(struct kobject *kobj,
 		cur_val = config->cur_val;
 		if (cur_val == val) {
 			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
-			return count;
+			return (ssize_t)count;
 		}
 
 		/* If configuration update cannot be performed with
@@ -216,7 +216,7 @@ static ssize_t store_fw_cfg(struct kobject *kobj,
 		return -EINVAL;
 	}
 
-	return count;
+	return (ssize_t)count;
 }
 
 static const struct sysfs_ops fw_cfg_ops = {
@@ -334,6 +334,75 @@ int kbase_csf_firmware_cfg_option_entry_parse(struct kbase_device *kbdev,
 
 	return 0;
 }
+
+int kbase_csf_firmware_cfg_fw_wa_enable(struct kbase_device *kbdev)
+{
+	struct firmware_config *config;
+
+	/* "quirks_ext" property is optional */
+	if (!kbdev->csf.quirks_ext)
+		return 0;
+
+	list_for_each_entry(config, &kbdev->csf.firmware_config, node) {
+		if (strcmp(config->name, CSF_FIRMWARE_CFG_WA_CFG0_ENTRY_NAME))
+			continue;
+		dev_info(kbdev->dev, "External quirks 0: 0x%08x", kbdev->csf.quirks_ext[0]);
+		kbase_csf_update_firmware_memory(kbdev, config->address, kbdev->csf.quirks_ext[0]);
+		return 0;
+	}
+
+	return -ENOENT;
+}
+
+int kbase_csf_firmware_cfg_fw_wa_init(struct kbase_device *kbdev)
+{
+	int ret;
+	int entry_count;
+	size_t entry_bytes;
+
+	/* "quirks-ext" property is optional and may have no value.
+	 * Also try fallback "quirks_ext" property if it doesn't exist.
+	 */
+	entry_count = of_property_count_u32_elems(kbdev->dev->of_node, "quirks-ext");
+
+	if (entry_count < 0)
+		entry_count = of_property_count_u32_elems(kbdev->dev->of_node, "quirks_ext");
+
+	if (entry_count < 0)
+		return 0;
+
+	entry_bytes = (size_t)entry_count * sizeof(u32);
+	kbdev->csf.quirks_ext = kzalloc(entry_bytes, GFP_KERNEL);
+	if (!kbdev->csf.quirks_ext)
+		return -ENOMEM;
+
+	ret = of_property_read_u32_array(kbdev->dev->of_node, "quirks-ext", kbdev->csf.quirks_ext,
+					 (size_t)entry_count);
+
+	if (ret == -EINVAL)
+		ret = of_property_read_u32_array(kbdev->dev->of_node, "quirks_ext",
+						 kbdev->csf.quirks_ext, (size_t)entry_count);
+
+	if (ret == -EINVAL || ret == -ENODATA) {
+		/* This is unexpected since the property is already accessed for counting the number
+		 * of its elements.
+		 */
+		dev_err(kbdev->dev, "\"quirks_ext\" DTB property data read failed");
+		return ret;
+	}
+	if (ret == -EOVERFLOW) {
+		dev_err(kbdev->dev, "\"quirks_ext\" DTB property data size exceeds 32 bits");
+		return ret;
+	}
+
+	return kbase_csf_firmware_cfg_fw_wa_enable(kbdev);
+}
+
+void kbase_csf_firmware_cfg_fw_wa_term(struct kbase_device *kbdev)
+{
+	kfree(kbdev->csf.quirks_ext);
+}
+
 #else
 int kbase_csf_firmware_cfg_init(struct kbase_device *kbdev)
 {

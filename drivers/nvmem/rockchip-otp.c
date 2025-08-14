@@ -2,7 +2,7 @@
 /*
  * Rockchip OTP Driver
  *
- * Copyright (c) 2018 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2018 Rockchip Electronics Co., Ltd.
  * Author: Finley Xiao <finley.xiao@rock-chips.com>
  */
 
@@ -25,6 +25,7 @@
 #define OTPC_SBPI_CMD_VALID_PRE		0x0024
 #define OTPC_SBPI_CS_VALID_PRE		0x0028
 #define OTPC_SBPI_STATUS		0x002C
+#define OTPC_LOCK_CTRL			0x0050
 #define OTPC_USER_CTRL			0x0100
 #define OTPC_USER_ADDR			0x0104
 #define OTPC_USER_ENABLE		0x0108
@@ -59,6 +60,8 @@
 #define OTPC_USE_USER_MASK		GENMASK(16, 16)
 #define OTPC_USER_FSM_ENABLE		BIT(0)
 #define OTPC_USER_FSM_ENABLE_MASK	GENMASK(16, 16)
+#define OTPC_LOCK			BIT(0)
+#define OTPC_LOCK_MASK			GENMASK(16, 16)
 #define OTPC_SBPI_DONE			BIT(1)
 #define OTPC_USER_DONE			BIT(2)
 
@@ -456,12 +459,6 @@ static int rk3568_otp_read(void *context, unsigned int offset, void *val,
 		goto out;
 	}
 
-	ret = rockchip_otp_reset(otp);
-	if (ret) {
-		dev_err(otp->dev, "failed to reset otp phy\n");
-		goto disable_clks;
-	}
-
 	ret = px30_otp_ecc_enable(otp, true);
 	if (ret < 0) {
 		dev_err(otp->dev, "rockchip_otp_ecc_enable err\n");
@@ -471,6 +468,7 @@ static int rk3568_otp_read(void *context, unsigned int offset, void *val,
 	writel(OTPC_USE_USER | OTPC_USE_USER_MASK, otp->base + OTPC_USER_CTRL);
 	udelay(5);
 	while (addr_len--) {
+		writel(OTPC_LOCK | OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
 		writel(addr_start++ | OTPC_USER_ADDR_MASK,
 		       otp->base + OTPC_USER_ADDR);
 		writel(OTPC_USER_FSM_ENABLE | OTPC_USER_FSM_ENABLE_MASK,
@@ -489,11 +487,14 @@ static int rk3568_otp_read(void *context, unsigned int offset, void *val,
 		out_value = readl(otp->base + OTPC_USER_Q);
 		memcpy(&buf[i], &out_value, RK3568_NBYTES);
 		i += RK3568_NBYTES;
+		writel(OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
 	}
 
 	memcpy(val, buf + addr_offset, bytes);
 
 read_end:
+	if (ret)
+		writel(OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
 	writel(0x0 | OTPC_USE_USER_MASK, otp->base + OTPC_USER_CTRL);
 disable_clks:
 	clk_bulk_disable_unprepare(otp->num_clks, otp->clks);
@@ -768,6 +769,13 @@ static const char * const rk3528_otp_clocks[] = {
 	"usr", "sbpi", "apb",
 };
 
+static const struct rockchip_data rk3506_data = {
+	.size = 0x78,
+	.clocks = rk3528_otp_clocks,
+	.num_clks = ARRAY_SIZE(rk3528_otp_clocks),
+	.reg_read = rk3568_otp_read,
+};
+
 static const struct rockchip_data rk3528_data = {
 	.size = 0x80,
 	.clocks = rk3528_otp_clocks,
@@ -775,19 +783,15 @@ static const struct rockchip_data rk3528_data = {
 	.reg_read = rk3568_otp_read,
 };
 
-static const char * const rk3562_otp_clocks[] = {
-	"usr", "sbpi", "apb", "arb", "phy",
+static const char * const rk3568_otp_clocks[] = {
+	"usr", "sbpi", "apb", "phy",
 };
 
 static const struct rockchip_data rk3562_data = {
 	.size = 0x80,
-	.clocks = rk3562_otp_clocks,
-	.num_clks = ARRAY_SIZE(rk3562_otp_clocks),
+	.clocks = rk3568_otp_clocks,
+	.num_clks = ARRAY_SIZE(rk3568_otp_clocks),
 	.reg_read = rk3568_otp_read,
-};
-
-static const char * const rk3568_otp_clocks[] = {
-	"usr", "sbpi", "apb", "phy",
 };
 
 static const struct rockchip_data rk3568_data = {
@@ -810,7 +814,7 @@ static const struct rockchip_data rk3576_data = {
 };
 
 static const char * const rk3588_otp_clocks[] = {
-	"otpc", "apb", "arb", "phy",
+	"otpc", "apb", "phy",
 };
 
 static const struct rockchip_data rk3588_data = {
@@ -821,14 +825,10 @@ static const struct rockchip_data rk3588_data = {
 	.reg_read = rk3588_otp_read,
 };
 
-static const char * const rv1106_otp_clocks[] = {
-	"usr", "sbpi", "apb", "phy", "arb", "pmc",
-};
-
 static const struct rockchip_data rv1106_data = {
 	.size = 0x80,
-	.clocks = rv1106_otp_clocks,
-	.num_clks = ARRAY_SIZE(rv1106_otp_clocks),
+	.clocks = rk3568_otp_clocks,
+	.num_clks = ARRAY_SIZE(rk3568_otp_clocks),
 	.reg_read = rk3568_otp_read,
 };
 
@@ -864,6 +864,12 @@ static const struct of_device_id rockchip_otp_match[] = {
 	{
 		.compatible = "rockchip,rk3308bs-otp",
 		.data = (void *)&px30s_data,
+	},
+#endif
+#ifdef CONFIG_CPU_RK3506
+	{
+		.compatible = "rockchip,rk3506-otp",
+		.data = (void *)&rk3506_data,
 	},
 #endif
 #ifdef CONFIG_CPU_RK3528

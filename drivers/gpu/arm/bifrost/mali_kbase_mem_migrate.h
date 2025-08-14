@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2022-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2022-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -18,6 +18,14 @@
  * http://www.gnu.org/licenses/gpl-2.0.html.
  *
  */
+
+#include <linux/version_compat_defs.h>
+
+#include <linux/types.h>
+
+struct kbase_device;
+struct file;
+struct page;
 
 /**
  * DOC: Base kernel page migration implementation.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2021 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
  *
  * Author: Chen Shunqing <csq@rock-chips.com>
  */
@@ -631,6 +631,7 @@
 #define HDMIRX_NOSIGNAL				BIT(3)
 #define HDMIRX_NOLOCK				BIT(4)
 
+int rk628_hdmirx_boot_state_init(struct rk628 *rk628);
 void rk628_hdmirx_enable_interrupts(struct rk628 *rk628, bool en);
 int rk628_hdmirx_enable(struct rk628 *rk628);
 void rk628_hdmirx_disable(struct rk628 *rk628);

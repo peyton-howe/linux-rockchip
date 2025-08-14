@@ -689,15 +689,6 @@ enum rtw89_regulation_type {
 	RTW89_REGD_NUM,
 };
 
-enum rtw89_reg_6ghz_power {
-	RTW89_REG_6GHZ_POWER_VLP = 0,
-	RTW89_REG_6GHZ_POWER_LPI = 1,
-	RTW89_REG_6GHZ_POWER_STD = 2,
-
-	NUM_OF_RTW89_REG_6GHZ_POWER,
-	RTW89_REG_6GHZ_POWER_DFLT = RTW89_REG_6GHZ_POWER_VLP,
-};
-
 enum rtw89_fw_pkt_ofld_type {
 	RTW89_PKT_OFLD_TYPE_PROBE_RSP = 0,
 	RTW89_PKT_OFLD_TYPE_PS_POLL = 1,
@@ -2929,9 +2920,7 @@ struct rtw89_p2p_noa_setter {
 struct rtw89_vif {
 	struct list_head list;
 	struct rtw89_dev *rtwdev;
-	struct rtw89_roc roc;
 	enum rtw89_sub_entity_idx sub_entity_idx;
-	enum rtw89_reg_6ghz_power reg_6ghz_power;
 
 	u8 mac_id;
 	u8 port;
@@ -2958,7 +2947,6 @@ struct rtw89_vif {
 	bool last_a_ctrl;
 	bool dyn_tb_bedge_en;
 	u8 def_tri_idx;
-	u32 tdls_peer;
 	struct work_struct update_beacon_work;
 	struct rtw89_addr_cam_entry addr_cam;
 	struct rtw89_bssid_cam_entry bssid_cam;
@@ -3402,41 +3390,6 @@ struct rtw89_phy_ul_tb_info {
 	u8 def_if_bandedge;
 };
 
-struct rtw89_antdiv_stats {
-	struct ewma_rssi cck_rssi_avg;
-	struct ewma_rssi ofdm_rssi_avg;
-	struct ewma_rssi non_legacy_rssi_avg;
-	u16 pkt_cnt_cck;
-	u16 pkt_cnt_ofdm;
-	u16 pkt_cnt_non_legacy;
-	u32 evm;
-};
-
-struct rtw89_antdiv_info {
-	struct rtw89_antdiv_stats target_stats;
-	struct rtw89_antdiv_stats main_stats;
-	struct rtw89_antdiv_stats aux_stats;
-	u8 training_count;
-	u8 rssi_pre;
-	bool get_stats;
-};
-
-enum rtw89_chanctx_state {
-	RTW89_CHANCTX_STATE_MCC_START,
-	RTW89_CHANCTX_STATE_MCC_STOP,
-};
-
-enum rtw89_chanctx_callbacks {
-	RTW89_CHANCTX_CALLBACK_PLACEHOLDER,
-
-	NUM_OF_RTW89_CHANCTX_CALLBACKS,
-};
-
-struct rtw89_chanctx_listener {
-	void (*callbacks[NUM_OF_RTW89_CHANCTX_CALLBACKS])
-		(struct rtw89_dev *rtwdev, enum rtw89_chanctx_state state);
-};
-
 struct rtw89_chip_info {
 	enum rtw89_core_chip_id chip_id;
 	enum rtw89_chip_gen chip_gen;
@@ -3461,7 +3414,6 @@ struct rtw89_chip_info {
 	u8 support_chanctx_num;
 	u8 support_bands;
 	bool support_bw160;
-	bool support_unii4;
 	bool support_ul_tb_ctrl;
 	bool hw_sec_hdr;
 	u8 rf_path_num;
@@ -3535,16 +3487,13 @@ struct rtw89_chip_info {
 	struct rtw89_reg_def c2h_counter_reg;
 	const struct rtw89_page_regs *page_regs;
 	bool cfo_src_fd;
-	bool cfo_hw_comp;
 	const struct rtw89_reg_def *dcfo_comp;
 	u8 dcfo_comp_sft;
 	const struct rtw89_imr_info *imr_info;
 	const struct rtw89_rrsr_cfgs *rrsr_cfgs;
 	u32 bss_clr_map_reg;
 	u32 dma_ch_mask;
-	u32 edcca_lvl_reg;
 	const struct wiphy_wowlan_support *wowlan_stub;
-	const struct rtw89_xtal_info *xtal_info;
 };
 
 union rtw89_bus_info {
@@ -3609,6 +3558,28 @@ struct rtw89_mac_info {
 	/* see RTW89_FW_OFLD_WAIT_COND series for wait condition */
 	struct rtw89_wait_info fw_ofld_wait;
 };
+
+#define RTW89_COMPLETION_BUF_SIZE 24
+#define RTW89_WAIT_COND_IDLE UINT_MAX
+
+struct rtw89_completion_data {
+	bool err;
+	u8 buf[RTW89_COMPLETION_BUF_SIZE];
+};
+
+struct rtw89_wait_info {
+	atomic_t cond;
+	struct completion completion;
+	struct rtw89_completion_data data;
+};
+
+#define RTW89_WAIT_FOR_COND_TIMEOUT msecs_to_jiffies(100)
+
+static inline void rtw89_init_wait(struct rtw89_wait_info *wait)
+{
+	init_completion(&wait->completion);
+	atomic_set(&wait->cond, RTW89_WAIT_COND_IDLE);
+}
 
 enum rtw89_fw_type {
 	RTW89_FW_NORMAL = 1,
@@ -3792,6 +3763,13 @@ struct rtw89_sub_entity {
 	struct rtw89_chanctx_cfg *cfg;
 };
 
+struct rtw89_sub_entity {
+	struct cfg80211_chan_def chandef;
+	struct rtw89_chan chan;
+	struct rtw89_chan_rcd rcd;
+	struct rtw89_chanctx_cfg *cfg;
+};
+
 struct rtw89_hal {
 	u32 rx_fltr;
 	u8 cv;
@@ -3809,12 +3787,9 @@ struct rtw89_hal {
 
 	DECLARE_BITMAP(entity_map, NUM_OF_RTW89_SUB_ENTITY);
 	struct rtw89_sub_entity sub[NUM_OF_RTW89_SUB_ENTITY];
-	struct cfg80211_chan_def roc_chandef;
 
 	bool entity_active;
 	enum rtw89_entity_mode entity_mode;
-
-	u32 edcca_bak;
 };
 
 #define RTW89_MAX_MAC_ID_NUM 128
@@ -3832,7 +3807,6 @@ enum rtw89_flags {
 	RTW89_FLAG_LOW_POWER_MODE,
 	RTW89_FLAG_INACTIVE_PS,
 	RTW89_FLAG_CRASH_SIMULATING,
-	RTW89_FLAG_SER_HANDLING,
 	RTW89_FLAG_WOWLAN,
 	RTW89_FLAG_FORBIDDEN_TRACK_WROK,
 	RTW89_FLAG_CHANGING_INTERFACE,
@@ -4355,6 +4329,7 @@ struct rtw89_wow_param {
 	DECLARE_BITMAP(flags, RTW89_WOW_FLAG_NUM);
 	struct rtw89_wow_cam_info patterns[RTW89_MAX_PATTERN_NUM];
 	u8 pattern_cnt;
+	struct list_head pkt_list;
 };
 
 struct rtw89_mcc_info {
@@ -4436,7 +4411,6 @@ struct rtw89_dev {
 	struct rtw89_phy_bb_gain_info bb_gain;
 	struct rtw89_phy_efuse_gain efuse_gain;
 	struct rtw89_phy_ul_tb_info ul_tb_info;
-	struct rtw89_antdiv_info antdiv;
 
 	struct delayed_work track_work;
 	struct delayed_work chanctx_work;
@@ -4601,14 +4575,6 @@ static inline void rtw89_hci_clear(struct rtw89_dev *rtwdev, struct pci_dev *pde
 {
 	if (rtwdev->hci.ops->clear)
 		rtwdev->hci.ops->clear(rtwdev, pdev);
-}
-
-static inline
-struct rtw89_tx_skb_data *RTW89_TX_SKB_CB(struct sk_buff *skb)
-{
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-
-	return (struct rtw89_tx_skb_data *)info->status.status_driver_data;
 }
 
 static inline u8 rtw89_read8(struct rtw89_dev *rtwdev, u32 addr)
@@ -4965,9 +4931,6 @@ const struct cfg80211_chan_def *rtw89_chandef_get(struct rtw89_dev *rtwdev,
 	struct rtw89_hal *hal = &rtwdev->hal;
 	enum rtw89_sub_entity_idx roc_idx = atomic_read(&hal->roc_entity_idx);
 
-	if (roc_idx == idx)
-		return &hal->roc_chandef;
-
 	return &hal->sub[idx].chandef;
 }
 
@@ -4987,18 +4950,6 @@ const struct rtw89_chan_rcd *rtw89_chan_rcd_get(struct rtw89_dev *rtwdev,
 	struct rtw89_hal *hal = &rtwdev->hal;
 
 	return &hal->sub[idx].rcd;
-}
-
-static inline
-const struct rtw89_chan *rtw89_scan_chan_get(struct rtw89_dev *rtwdev)
-{
-	struct ieee80211_vif *vif = rtwdev->scan_info.scanning_vif;
-	struct rtw89_vif *rtwvif = vif_to_rtwvif_safe(vif);
-
-	if (rtwvif)
-		return rtw89_chan_get(rtwdev, rtwvif->sub_entity_idx);
-	else
-		return rtw89_chan_get(rtwdev, RTW89_SUB_ENTITY_0);
 }
 
 static inline void rtw89_chip_fem_setup(struct rtw89_dev *rtwdev)
@@ -5299,25 +5250,6 @@ static inline struct sk_buff *rtw89_alloc_skb_for_rx(struct rtw89_dev *rtwdev,
 	}
 
 	return dev_alloc_skb(length);
-}
-
-static inline void rtw89_core_tx_wait_complete(struct rtw89_dev *rtwdev,
-					       struct rtw89_tx_skb_data *skb_data,
-					       bool tx_done)
-{
-	struct rtw89_tx_wait_info *wait;
-
-	rcu_read_lock();
-
-	wait = rcu_dereference(skb_data->wait);
-	if (!wait)
-		goto out;
-
-	wait->tx_done = tx_done;
-	complete(&wait->completion);
-
-out:
-	rcu_read_unlock();
 }
 
 int rtw89_core_tx_write(struct rtw89_dev *rtwdev, struct ieee80211_vif *vif,

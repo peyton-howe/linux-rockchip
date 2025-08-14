@@ -5,7 +5,6 @@
  */
 
 /dts-v1/;
-
 #include "rk3588-nanopc-t6.dts"
 
 / {

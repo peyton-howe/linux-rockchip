@@ -625,8 +625,7 @@ static void rtw89_mac_dump_err_status(struct rtw89_dev *rtwdev,
 	if (err != MAC_AX_ERR_L1_ERR_DMAC &&
 	    err != MAC_AX_ERR_L0_PROMOTE_TO_L1 &&
 	    err != MAC_AX_ERR_L0_ERR_CMAC0 &&
-	    err != MAC_AX_ERR_L0_ERR_CMAC1 &&
-	    err != MAC_AX_ERR_RXI300)
+	    err != MAC_AX_ERR_L0_ERR_CMAC1)
 		return;
 
 	rtw89_info(rtwdev, "--->\nerr=0x%x\n", err);
@@ -1518,10 +1517,6 @@ const struct rtw89_mac_size_set rtw89_mac_size = {
 	.ple_qt58 = {147, 0, 16, 20, 157, 13, 229, 0, 172, 14, 24, 0,},
 	/* 8852A PCIE WOW */
 	.ple_qt_52a_wow = {264, 0, 32, 20, 64, 13, 1005, 0, 64, 128, 120,},
-	/* 8852B PCIE WOW */
-	.ple_qt_52b_wow = {147, 0, 16, 20, 157, 13, 133, 0, 172, 14, 24, 0,},
-	/* 8851B PCIE WOW */
-	.ple_qt_51b_wow = {147, 0, 16, 20, 157, 13, 133, 0, 172, 14, 24, 0,},
 };
 EXPORT_SYMBOL(rtw89_mac_size);
 
@@ -4014,36 +4009,25 @@ static void rtw89_mac_port_cfg_tbtt_shift(struct rtw89_dev *rtwdev,
 				B_AX_TBTT_SHIFT_OFST_MASK, val);
 }
 
-void rtw89_mac_port_tsf_sync(struct rtw89_dev *rtwdev,
-			     struct rtw89_vif *rtwvif,
-			     struct rtw89_vif *rtwvif_src,
-			     u16 offset_tu)
+static void rtw89_mac_port_tsf_sync(struct rtw89_dev *rtwdev,
+				    struct rtw89_vif *rtwvif,
+				    struct rtw89_vif *rtwvif_src, u8 offset,
+				    int *n_offset)
 {
 	u32 val, reg;
 
-	val = RTW89_PORT_OFFSET_TU_TO_32US(offset_tu);
-	reg = rtw89_mac_reg_by_idx(rtwdev, R_AX_PORT0_TSF_SYNC + rtwvif->port * 4,
-				   rtwvif->mac_idx);
-
-	rtw89_write32_mask(rtwdev, reg, B_AX_SYNC_PORT_SRC, rtwvif_src->port);
-	rtw89_write32_mask(rtwdev, reg, B_AX_SYNC_PORT_OFFSET_VAL, val);
-	rtw89_write32_set(rtwdev, reg, B_AX_SYNC_NOW);
-}
-
-static void rtw89_mac_port_tsf_sync_rand(struct rtw89_dev *rtwdev,
-					 struct rtw89_vif *rtwvif,
-					 struct rtw89_vif *rtwvif_src,
-					 u8 offset, int *n_offset)
-{
 	if (rtwvif->net_type != RTW89_NET_TYPE_AP_MODE || rtwvif == rtwvif_src)
 		return;
 
 	/* adjust offset randomly to avoid beacon conflict */
 	offset = offset - offset / 4 + get_random_u32() % (offset / 2);
-	rtw89_mac_port_tsf_sync(rtwdev, rtwvif, rtwvif_src,
-				(*n_offset) * offset);
+	val = RTW89_PORT_OFFSET_MS_TO_32US((*n_offset)++, offset);
+	reg = rtw89_mac_reg_by_idx(R_AX_PORT0_TSF_SYNC + rtwvif->port * 4,
+				   rtwvif->mac_idx);
 
-	(*n_offset)++;
+	rtw89_write32_mask(rtwdev, reg, B_AX_SYNC_PORT_SRC, rtwvif_src->port);
+	rtw89_write32_mask(rtwdev, reg, B_AX_SYNC_PORT_OFFSET_VAL, val);
+	rtw89_write32_set(rtwdev, reg, B_AX_SYNC_NOW);
 }
 
 static void rtw89_mac_port_tsf_resync_all(struct rtw89_dev *rtwdev)
@@ -4065,7 +4049,7 @@ static void rtw89_mac_port_tsf_resync_all(struct rtw89_dev *rtwdev)
 	offset /= (vif_aps + 1);
 
 	rtw89_for_each_rtwvif(rtwdev, tmp)
-		rtw89_mac_port_tsf_sync_rand(rtwdev, tmp, src, offset, &n_offset);
+		rtw89_mac_port_tsf_sync(rtwdev, tmp, src, offset, &n_offset);
 }
 
 int rtw89_mac_vif_init(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
@@ -4499,12 +4483,12 @@ rtw89_mac_c2h_mcc_rcv_ack(struct rtw89_dev *rtwdev, struct sk_buff *c2h, u32 len
 	case H2C_FUNC_MCC_SET_DURATION:
 		break;
 	default:
-		rtw89_debug(rtwdev, RTW89_DBG_CHAN,
+		rtw89_debug(rtwdev, RTW89_DBG_FW,
 			    "invalid MCC C2H RCV ACK: func %d\n", func);
 		return;
 	}
 
-	rtw89_debug(rtwdev, RTW89_DBG_CHAN,
+	rtw89_debug(rtwdev, RTW89_DBG_FW,
 		    "MCC C2H RCV ACK: group %d, func %d\n", group, func);
 }
 
@@ -4532,12 +4516,12 @@ rtw89_mac_c2h_mcc_req_ack(struct rtw89_dev *rtwdev, struct sk_buff *c2h, u32 len
 	case H2C_FUNC_DEL_MCC_GROUP:
 	case H2C_FUNC_RESET_MCC_GROUP:
 	default:
-		rtw89_debug(rtwdev, RTW89_DBG_CHAN,
+		rtw89_debug(rtwdev, RTW89_DBG_FW,
 			    "invalid MCC C2H REQ ACK: func %d\n", func);
 		return;
 	}
 
-	rtw89_debug(rtwdev, RTW89_DBG_CHAN,
+	rtw89_debug(rtwdev, RTW89_DBG_FW,
 		    "MCC C2H REQ ACK: group %d, func %d, return code %d\n",
 		    group, func, retcode);
 
@@ -4564,11 +4548,6 @@ rtw89_mac_c2h_mcc_tsf_rpt(struct rtw89_dev *rtwdev, struct sk_buff *c2h, u32 len
 	rpt->tsf_x_high = RTW89_GET_MAC_C2H_MCC_TSF_RPT_TSF_HIGH_X(c2h->data);
 	rpt->tsf_y_low = RTW89_GET_MAC_C2H_MCC_TSF_RPT_TSF_LOW_Y(c2h->data);
 	rpt->tsf_y_high = RTW89_GET_MAC_C2H_MCC_TSF_RPT_TSF_HIGH_Y(c2h->data);
-
-	rtw89_debug(rtwdev, RTW89_DBG_CHAN,
-		    "MCC C2H TSF RPT: macid %d> %llu, macid %d> %llu\n",
-		    rpt->macid_x, (u64)rpt->tsf_x_high << 32 | rpt->tsf_x_low,
-		    rpt->macid_y, (u64)rpt->tsf_y_high << 32 | rpt->tsf_y_low);
 
 	cond = RTW89_MCC_WAIT_COND(group, H2C_FUNC_MCC_REQ_TSF);
 	rtw89_complete_cond(&rtwdev->mcc.wait, cond, &data);
@@ -4627,14 +4606,14 @@ rtw89_mac_c2h_mcc_status_rpt(struct rtw89_dev *rtwdev, struct sk_buff *c2h, u32 
 		rsp = false;
 		break;
 	default:
-		rtw89_debug(rtwdev, RTW89_DBG_CHAN,
+		rtw89_debug(rtwdev, RTW89_DBG_FW,
 			    "invalid MCC C2H STS RPT: status %d\n", status);
 		return;
 	}
 
-	rtw89_debug(rtwdev, RTW89_DBG_CHAN,
-		    "MCC C2H STS RPT: group %d, macid %d, status %d, tsf %llu\n",
-		     group, macid, status, (u64)tsf_high << 32 | tsf_low);
+	rtw89_debug(rtwdev, RTW89_DBG_FW,
+		    "MCC C2H STS RPT: group %d, macid %d, status %d, tsf {%d, %d}\n",
+		     group, macid, status, tsf_low, tsf_high);
 
 	if (!rsp)
 		return;
@@ -4680,21 +4659,6 @@ bool rtw89_mac_c2h_chk_atomic(struct rtw89_dev *rtwdev, u8 class, u8 func)
 	switch (class) {
 	default:
 		return false;
-	case RTW89_MAC_C2H_CLASS_INFO:
-		switch (func) {
-		default:
-			return false;
-		case RTW89_MAC_C2H_FUNC_REC_ACK:
-		case RTW89_MAC_C2H_FUNC_DONE_ACK:
-			return true;
-		}
-	case RTW89_MAC_C2H_CLASS_OFLD:
-		switch (func) {
-		default:
-			return false;
-		case RTW89_MAC_C2H_FUNC_PKT_OFLD_RSP:
-			return true;
-		}
 	case RTW89_MAC_C2H_CLASS_MCC:
 		return true;
 	}
@@ -5676,19 +5640,10 @@ int rtw89_mac_ptk_drop_by_band_and_wait(struct rtw89_dev *rtwdev,
 	for (i = 0; i < try_cnt; i++) {
 		ret = read_poll_timeout(mac_is_txq_empty, empty, empty, 50,
 					50000, false, rtwdev);
-		if (ret && !RTW89_CHK_FW_FEATURE(NO_PACKET_DROP, &rtwdev->fw))
+		if (ret)
 			rtw89_fw_h2c_pkt_drop(rtwdev, &params);
 		else
 			return 0;
 	}
 	return ret;
 }
-
-const struct rtw89_mac_gen_def rtw89_mac_gen_ax = {
-	.band1_offset = RTW89_MAC_AX_BAND_REG_OFFSET,
-	.filter_model_addr = R_AX_FILTER_MODEL_ADDR,
-	.indir_access_addr = R_AX_INDIR_ACCESS_ENTRY,
-	.mem_base_addrs = rtw89_mac_mem_base_addrs_ax,
-	.rx_fltr = R_AX_RX_FLTR_OPT,
-};
-EXPORT_SYMBOL(rtw89_mac_gen_ax);

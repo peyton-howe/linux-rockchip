@@ -239,45 +239,6 @@
 		pinctrl-0 = <&usb_otg0_pwren>;
 	};
 
-	vcc_mipicsi0: vcc-mipicsi0-regulator {
-		compatible = "regulator-fixed";
-		gpio = <&gpio3 RK_PB0 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&mipicsi0_pwr>;
-		regulator-name = "vcc_mipicsi0";
-		enable-active-high;
-	};
-
-	vcc_mipicsi1: vcc-mipicsi1-regulator {
-		compatible = "regulator-fixed";
-		gpio = <&gpio3 RK_PC5 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&mipicsi1_pwr>;
-		regulator-name = "vcc_mipicsi1";
-		enable-active-high;
-	};
-
-	vcc_mipidcphy0: vcc-mipidcphy0-regulator {
-		compatible = "regulator-fixed";
-		gpio = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&mipidcphy0_pwr>;
-		regulator-name = "vcc_mipidcphy0";
-		enable-active-high;
-	};
-
-	wireless_bluetooth: wireless-bluetooth {
-		compatible = "bluetooth-platdata";
-		//wifi-bt-power-toggle;
-		uart_rts_gpios = <&gpio1 RK_PC2 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default", "rts_gpio";
-		pinctrl-0 = <&uart4m1_rtsn>;
-		pinctrl-1 = <&uart4m1_rts_gpio>;
-		BT,power_gpio = <&gpio1 RK_PC7 GPIO_ACTIVE_HIGH>;
-		//BT,reset_gpio    = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
-		//BT,wake_host_irq = <&gpio1 RK_PC2 GPIO_ACTIVE_HIGH>;
-	};
-
 	wireless_wlan: wireless-wlan {
 		compatible = "wlan-platdata";
 		wifi_chip_type = "rtl8852bs";
@@ -397,6 +358,45 @@
 
 &hdptxphy_hdmi {
 	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0m1_xfer>;
+	usbc1: fusb302@22 {
+		compatible = "fcs,fusb302";
+		reg = <0x22>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PC3 IRQ_TYPE_LEVEL_LOW>;
+		int-n-gpios = <&gpio0 RK_PC3 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbc1_int>;
+		vbus-supply = <&vbus5v0_typec>;
+		status = "okay";
+		usb_con1: connector {
+			compatible = "usb-c-connector";
+			label = "USB-C";
+			data-role = "dual";
+			power-role = "dual";
+			try-power-role = "sink";
+			op-sink-microwatt = <1000000>;
+			sink-pdos =
+				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
+				 PDO_FIXED(9000, 3000, PDO_FIXED_USB_COMM)
+				 PDO_FIXED(12000, 3000, PDO_FIXED_USB_COMM)>;
+			source-pdos =
+				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
+			altmodes {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				altmode@0 {
+					reg = <0>;
+					svid = <0xff01>;
+					vdo = <0xffffffff>;
+				};
+			};
+		};
+	};
 };
 
 &i2c2 {
@@ -538,23 +538,17 @@
 };
 
 &pinctrl {
-	cam {
-		mipicsi0_pwr: mipicsi0-pwr {
-			rockchip,pins =
-				/* camera power en */
-				<3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+	bt {
+		bt_enable: bt-enable {
+			rockchip,pins = <1 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		mipicsi1_pwr: mipicsi1-pwr {
-			rockchip,pins =
-				/* camera power en */
-				<3 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		bt_host_wake: bt-host-wake {
+			rockchip,pins = <0 RK_PB1 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
 
-		mipidcphy0_pwr: mipidcphy0-pwr {
-			rockchip,pins =
-				/* camera power en */
-				<3 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+		bt_wake: bt-wake {
+			rockchip,pins = <1 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -591,11 +585,9 @@
 		usbc0_int: usbc0-int {
 			rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
-	};
 
-	wireless-bluetooth {
-		uart4m1_rts_gpio: uart4m1-rts-gpio {
-			rockchip,pins = <1 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		usbc1_int: usbc1-int {
+			rockchip,pins = <0 RK_PC3 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
@@ -608,11 +600,6 @@
 			rockchip,pins = <1 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
-};
-
-&pwm1_6ch_1 {
-	status = "okay";
-	pinctrl-0 = <&pwm1m0_ch1>;
 };
 
 &pwm2_8ch_7 {
@@ -746,6 +733,7 @@
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
 	disable-wp;
+	non-removable;
 	sd-uhs-sdr104;
 	vqmmc-supply = <&vccio_sd_s0>;
 	status = "okay";
@@ -780,7 +768,18 @@
 &uart4 {
 	status = "okay";
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart4m1_xfer &uart4m1_ctsn>;
+	pinctrl-0 = <&uart4m1_xfer &uart4m1_ctsn &uart4m1_rtsn>;
+	uart-has-rtscts;
+	bluetooth:bluetooth-serial {
+		compatible = "brcm,bcm43438-bt";
+		device-wakeup-gpios = <&gpio1 RK_PD4 0>;
+		host-wakeup-gpios = <&gpio0 RK_PB1 0>;
+		shutdown-gpios = <&gpio1 RK_PC7 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_host_wake &bt_wake &bt_enable>;
+		vbat-supply = <&vcc_3v3_s3>;
+		vddio-supply = <&vcc_1v8_s3>;
+	};
 };
 
 &ufs {
@@ -855,4 +854,9 @@
 &vp2 {
 	assigned-clocks = <&cru DCLK_VP2_SRC>;
 	assigned-clock-parents = <&cru PLL_VPLL>;
+};
+
+/* watchdog */
+&wdt {
+	status = "okay";
 };

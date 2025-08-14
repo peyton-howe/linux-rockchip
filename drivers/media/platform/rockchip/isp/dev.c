@@ -79,6 +79,10 @@ static bool rkisp_clk_dbg;
 module_param_named(clk_dbg, rkisp_clk_dbg, bool, 0644);
 MODULE_PARM_DESC(clk_dbg, "rkisp clk set by user");
 
+static bool rkisp_m_online[DEV_MAX];
+module_param_array_named(m_online, rkisp_m_online, bool, NULL, 0644);
+MODULE_PARM_DESC(m_online, "rkisp multi sensor online mode");
+
 static char rkisp_version[RKISP_VERNO_LEN];
 module_param_string(version, rkisp_version, RKISP_VERNO_LEN, 0444);
 MODULE_PARM_DESC(version, "version number");
@@ -94,6 +98,14 @@ MODULE_PARM_DESC(wait_line, "rkisp wait line to buf done early");
 static unsigned int rkisp_wrap_line;
 module_param_named(wrap_line, rkisp_wrap_line, uint, 0644);
 MODULE_PARM_DESC(wrap_line, "rkisp wrap line for mpp");
+
+unsigned int rkisp_vicap_buf[DEV_MAX];
+module_param_array_named(vicap_raw_buf, rkisp_vicap_buf, uint, NULL, 0644);
+MODULE_PARM_DESC(vicap_raw_buf, "rkisp and vicap auto readback mode raw buf count");
+
+unsigned int rkisp_hdr_wrap_line[DEV_MAX];
+module_param_array_named(hdr_wrap_line, rkisp_hdr_wrap_line, uint, NULL, 0644);
+MODULE_PARM_DESC(hdr_wrap_line, "rkisp and vicap online hdr wrap line");
 
 static DEFINE_MUTEX(rkisp_dev_mutex);
 static LIST_HEAD(rkisp_device_list);
@@ -265,7 +277,7 @@ end:
 	if (hw_dev->unite == ISP_UNITE_TWO)
 		rkisp_set_clk_rate(hw_dev->clks[5], hw_dev->clk_rate_tbl[i].clk_rate * 1000000UL);
 	/* aclk equal to core clk */
-	if (dev->isp_ver == ISP_V32)
+	if (dev->isp_ver == ISP_V32 || dev->isp_ver == ISP_V33)
 		rkisp_set_clk_rate(hw_dev->clks[1], hw_dev->clk_rate_tbl[i].clk_rate * 1000000UL);
 	dev_info(hw_dev->dev, "set isp clk = %luHz\n", clk_get_rate(hw_dev->clks[0]));
 
@@ -276,13 +288,35 @@ static int rkisp_pipeline_open(struct rkisp_pipeline *p,
 				struct media_entity *me,
 				bool prepare)
 {
-	int ret;
 	struct rkisp_device *dev = container_of(p, struct rkisp_device, pipe);
+	struct rkisp_hw_dev *hw = dev->hw_dev;
+	int ret;
 
 	if (WARN_ON(!p || !me))
 		return -EINVAL;
 	if (atomic_inc_return(&p->power_cnt) > 1)
 		return 0;
+
+	dev->hdr_wrap_line = 0;
+	if (hw->is_assigned_clk)
+		rkisp_clk_dbg = true;
+	if (!(dev->isp_inp & (INP_RAWRD0 | INP_RAWRD2))) {
+		dev->is_rdbk_auto = rkisp_rdbk_auto;
+		if (dev->is_aiisp_en)
+			dev->is_rdbk_auto = true;
+		if (rkisp_vicap_buf[dev->dev_id] > RKISP_VICAP_BUF_CNT_MAX)
+			rkisp_vicap_buf[dev->dev_id] = RKISP_VICAP_BUF_CNT_MAX;
+		dev->vicap_buf_cnt = rkisp_vicap_buf[dev->dev_id];
+		dev->is_m_online = rkisp_m_online[dev->dev_id];
+		if (hw->isp_ver != ISP_V33 || hw->is_single)
+			dev->is_m_online = false;
+		if (hw->isp_ver == ISP_V33) {
+			if (dev->unite_div != ISP_UNITE_DIV1)
+				rkisp_hdr_wrap_line[dev->dev_id] = 0;
+			dev->hdr_wrap_line = rkisp_hdr_wrap_line[dev->dev_id];
+		}
+	}
+	dev->cap_dev.wait_line = rkisp_wait_line;
 
 	/* go through media graphic and get subdevs */
 	if (prepare) {
@@ -299,7 +333,7 @@ static int rkisp_pipeline_open(struct rkisp_pipeline *p,
 		dev->hw_dev->monitor.is_en = rkisp_monitor;
 
 	if (dev->isp_inp & (INP_CSI | INP_RAWRD0 | INP_RAWRD1 | INP_RAWRD2 | INP_CIF))
-		rkisp_csi_config_patch(dev);
+		rkisp_csi_config_patch(dev, false);
 	return 0;
 err:
 	atomic_dec(&p->power_cnt);
@@ -317,6 +351,8 @@ static int rkisp_pipeline_close(struct rkisp_pipeline *p)
 	dev->hw_dev->isp_size[dev->dev_id].is_on = false;
 	if (dev->hw_dev->is_runing && (dev->isp_ver >= ISP_V30) && !rkisp_clk_dbg)
 		dev->hw_dev->is_dvfs = true;
+	dev->is_rdbk_auto = false;
+	dev->is_m_online = false;
 	return 0;
 }
 
@@ -340,12 +376,17 @@ static int rkisp_pipeline_set_stream(struct rkisp_pipeline *p, bool on)
 		ret = v4l2_subdev_call(&dev->isp_sdev.sd, video, s_stream, true);
 		if (ret < 0)
 			goto err;
+		if (dev->is_m_online && !dev->is_pre_on &&
+		    atomic_read(&dev->hw_dev->refcnt) == 1) {
+			i = 1;
+			v4l2_subdev_call(p->subdevs[0], core, ioctl, RKISP_VICAP_CMD_HW_LINK, &i);
+		}
 		/* phy -> sensor */
 		for (i = 0; i < p->num_subdevs; ++i) {
 			if (((dev->vicap_in.merge_num > 1) &&
 			     (p->subdevs[i]->entity.function == MEDIA_ENT_F_CAM_SENSOR)) ||
-			    (dev->isp_inp & INP_CIF && IS_HDR_RDBK(dev->rd_mode) &&
-			     (!dev->is_rdbk_auto)))
+			    ((dev->isp_inp & (INP_CIF | INP_RAWRD2)) == (INP_CIF | INP_RAWRD2)) ||
+			    dev->is_pre_on)
 				continue;
 			ret = v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
 			if (on && ret < 0 && ret != -ENOIOCTLCMD && ret != -ENODEV)
@@ -366,8 +407,7 @@ static int rkisp_pipeline_set_stream(struct rkisp_pipeline *p, bool on)
 		for (i = p->num_subdevs - 1; i >= 0; --i) {
 			if (((dev->vicap_in.merge_num > 1) &&
 			     (p->subdevs[i]->entity.function == MEDIA_ENT_F_CAM_SENSOR)) ||
-			    (dev->isp_inp & INP_CIF && IS_HDR_RDBK(dev->rd_mode) &&
-			     (!dev->is_rdbk_auto)))
+			    ((dev->isp_inp & (INP_CIF | INP_RAWRD2)) == (INP_CIF | INP_RAWRD2)))
 				continue;
 			v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
 		}
@@ -452,7 +492,7 @@ static int _set_pipeline_default_fmt(struct rkisp_device *dev, bool is_init)
 	struct v4l2_subdev *isp;
 	struct v4l2_subdev_format fmt;
 	struct v4l2_subdev_selection sel;
-	u32 i, width, height, code;
+	u32 width, height, code;
 
 	memset(&sel, 0, sizeof(sel));
 	memset(&fmt, 0, sizeof(fmt));
@@ -533,14 +573,6 @@ static int _set_pipeline_default_fmt(struct rkisp_device *dev, bool is_init)
 	}
 
 	if (dev->isp_ver == ISP_V30) {
-		struct v4l2_pix_format_mplane pixm = {
-			.width = width,
-			.height = height,
-			.pixelformat = rkisp_mbus_pixelcode_to_v4l2(code),
-		};
-
-		for (i = RKISP_STREAM_RAWRD0; i <= RKISP_STREAM_RAWRD2; i++)
-			rkisp_dmarx_set_fmt(&dev->dmarx_dev.stream[i], pixm);
 		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_FBC,
 					 width, height, V4L2_PIX_FMT_FBC0);
 #ifdef RKISP_STREAM_BP_EN
@@ -549,28 +581,19 @@ static int _set_pipeline_default_fmt(struct rkisp_device *dev, bool is_init)
 #endif
 	}
 
-	if (dev->isp_ver == ISP_V32 ||
-	    dev->isp_ver == ISP_V32_L ||
-	    dev->isp_ver == ISP_V39) {
-		struct v4l2_pix_format_mplane pixm = {
-			.width = width,
-			.height = height,
-			.pixelformat = rkisp_mbus_pixelcode_to_v4l2(code),
-		};
-
-		rkisp_dmarx_set_fmt(&dev->dmarx_dev.stream[RKISP_STREAM_RAWRD0], pixm);
-		rkisp_dmarx_set_fmt(&dev->dmarx_dev.stream[RKISP_STREAM_RAWRD2], pixm);
-		if (dev->isp_ver == ISP_V32) {
-			rkisp_set_stream_def_fmt(dev, RKISP_STREAM_BP,
-						 width, height, V4L2_PIX_FMT_NV12);
-			rkisp_set_stream_def_fmt(dev, RKISP_STREAM_MPDS,
-						 width / 4, height / 4, V4L2_PIX_FMT_NV12);
-			rkisp_set_stream_def_fmt(dev, RKISP_STREAM_BPDS,
-						 width / 4, height / 4, V4L2_PIX_FMT_NV12);
-		}
+	if (dev->isp_ver == ISP_V32) {
+		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_BP,
+					 width, height, V4L2_PIX_FMT_NV12);
+		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_MPDS,
+					 width / 4, height / 4, V4L2_PIX_FMT_NV12);
+		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_BPDS,
+					 width / 4, height / 4, V4L2_PIX_FMT_NV12);
 	}
 	if (dev->isp_ver == ISP_V39)
 		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_LDC, width, height, V4L2_PIX_FMT_NV12);
+	if (dev->isp_ver == ISP_V33)
+		rkisp_set_stream_def_fmt(dev, RKISP_STREAM_BP,
+					 width, height, V4L2_PIX_FMT_NV12);
 	return 0;
 }
 
@@ -581,31 +604,29 @@ static int subdev_notifier_complete(struct v4l2_async_notifier *notifier)
 
 	dev = container_of(notifier, struct rkisp_device, notifier);
 
-	mutex_lock(&dev->media_dev.graph_mutex);
 	ret = rkisp_create_links(dev);
 	if (ret < 0)
-		goto unlock;
+		goto err;
 	ret = v4l2_device_register_subdev_nodes(&dev->v4l2_dev);
 	if (ret < 0)
-		goto unlock;
+		goto err;
 
 	if (dev->isp_inp) {
 		ret = rkisp_update_sensor_info(dev);
 		if (ret < 0) {
 			v4l2_err(&dev->v4l2_dev, "update sensor failed\n");
-			goto unlock;
+			goto err;
 		}
 		dev->is_hw_link = true;
 	}
 
 	ret = _set_pipeline_default_fmt(dev, true);
 	if (ret < 0)
-		goto unlock;
+		goto err;
 
 	v4l2_info(&dev->v4l2_dev, "Async subdev notifier completed\n");
 
-unlock:
-	mutex_unlock(&dev->media_dev.graph_mutex);
+err:
 	if (!ret && dev->is_thunderboot)
 		schedule_work(&dev->cap_dev.fast_work);
 	return ret;
@@ -1020,16 +1041,7 @@ static int __maybe_unused rkisp_runtime_resume(struct device *dev)
 	    rkisp_update_sensor_info(isp_dev) >= 0)
 		_set_pipeline_default_fmt(isp_dev, false);
 
-	if (isp_dev->hw_dev->is_assigned_clk)
-		rkisp_clk_dbg = true;
-
-	if (isp_dev->hw_dev->unite == ISP_UNITE_ONE &&
-	    !(isp_dev->isp_inp & INP_RAWRD2))
-		rkisp_rdbk_auto = true;
-
-	isp_dev->cap_dev.wait_line = rkisp_wait_line;
 	isp_dev->cap_dev.wrap_line = rkisp_wrap_line;
-	isp_dev->is_rdbk_auto = rkisp_rdbk_auto;
 	mutex_lock(&isp_dev->hw_dev->dev_lock);
 	ret = pm_runtime_get_sync(isp_dev->hw_dev->dev);
 	mutex_unlock(&isp_dev->hw_dev->dev_lock);
@@ -1093,12 +1105,13 @@ static int rkisp_pm_prepare(struct device *dev)
 	return 0;
 }
 
-static void rkisp_pm_complete(struct device *dev)
+static int rkisp_resume(struct device *dev)
 {
 	struct rkisp_device *isp_dev = dev_get_drvdata(dev);
 	struct rkisp_hw_dev *hw = isp_dev->hw_dev;
 	struct rkisp_pipeline *p = &isp_dev->pipe;
 	struct rkisp_stream *stream;
+	struct rkisp_device *isp_tmp;
 	int i, on = 1, rd_mode = isp_dev->rd_mode;
 	u32 val;
 
@@ -1111,7 +1124,7 @@ static void rkisp_pm_complete(struct device *dev)
 			if (mipi_sensor)
 				v4l2_subdev_call(mipi_sensor, core, s_power, 1);
 		}
-		return;
+		return 0;
 	}
 
 	if (isp_dev->is_rtt_suspend) {
@@ -1193,21 +1206,66 @@ static void rkisp_pm_complete(struct device *dev)
 		if (isp_dev->is_first_double)
 			stream->skip_frame = 1;
 	}
-	if (hw->cur_dev_id == isp_dev->dev_id)
+	if (hw->cur_dev_id == isp_dev->dev_id) {
+		if (atomic_read(&hw->refcnt) == 2) {
+			/* isp0 online, isp1 offline, isp0 to running first */
+			isp_tmp = hw->isp[!isp_dev->dev_id];
+			if (isp_dev->dev_id && !(IS_HDR_RDBK(isp_tmp->rd_mode)))
+				hw->is_idle = false;
+		}
 		rkisp_rdbk_trigger_event(isp_dev, T_CMD_QUEUE, NULL);
-
+	}
 	if (rkisp_link_sensor(isp_dev->isp_inp)) {
 		for (i = 0; i < p->num_subdevs; i++)
 			v4l2_subdev_call(p->subdevs[i], core, s_power, 1);
 		for (i = 0; i < p->num_subdevs; i++)
 			v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
-	} else if (isp_dev->isp_inp & INP_CIF && !(IS_HDR_RDBK(isp_dev->rd_mode))) {
+	} else if (isp_dev->isp_inp & INP_CIF && !IS_HDR_RDBK(isp_dev->rd_mode)) {
+		if (!hw->is_single) {
+			int on = 1;
+
+			if (atomic_read(&hw->refcnt) == 2) {
+				/* isp0 and isp1 online, isp1 to running first */
+				isp_tmp = hw->isp[!isp_dev->dev_id];
+				if (!IS_HDR_RDBK(isp_tmp->rd_mode) && !isp_dev->dev_id)
+					on = 0;
+			} else if (isp_dev->unite_div == ISP_UNITE_DIV2) {
+				isp_dev->unite_index = ISP_UNITE_LEFT;
+				isp_dev->params_vdev.rdbk_times = 2;
+			}
+			if (on) {
+				hw->cur_dev_id = isp_dev->dev_id;
+				hw->is_idle = false;
+				rkisp_online_update_reg(isp_dev, false, true);
+				rkisp_vicap_hw_link(isp_dev, on);
+			}
+		}
 		v4l2_subdev_call(p->subdevs[0], core, ioctl, RKISP_VICAP_CMD_QUICK_STREAM, &on);
 	}
+	return 0;
+}
+
+static int rkisp_pm_resume(struct device *dev)
+{
+	struct rkisp_device *isp_dev = dev_get_drvdata(dev);
+
+	if (isp_dev->isp_ver == ISP_V33)
+		return rkisp_resume(dev);
+	return 0;
+}
+
+static void rkisp_pm_complete(struct device *dev)
+{
+	struct rkisp_device *isp_dev = dev_get_drvdata(dev);
+
+	if (isp_dev->isp_ver == ISP_V33)
+		return;
+	rkisp_resume(dev);
 }
 
 static const struct dev_pm_ops rkisp_plat_pm_ops = {
 	.prepare = rkisp_pm_prepare,
+	.resume = rkisp_pm_resume,
 	.complete = rkisp_pm_complete,
 	SET_RUNTIME_PM_OPS(rkisp_runtime_suspend, rkisp_runtime_resume, NULL)
 };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (C) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Shunqing Chen <csq@rock-chips.com>
  */
@@ -76,8 +76,8 @@ static const struct regmap_range rk628_hdmirx_readable_ranges[] = {
 	regmap_reg_range(HDMI_RX_PDEC_STS, HDMI_RX_PDEC_STS),
 	regmap_reg_range(HDMI_RX_PDEC_GCP_AVMUTE, HDMI_RX_PDEC_GCP_AVMUTE),
 	regmap_reg_range(HDMI_RX_PDEC_ACR_CTS, HDMI_RX_PDEC_ACR_N),
+	regmap_reg_range(HDMI_RX_PDEC_AVI_HB, HDMI_RX_PDEC_AVI_PB),
 	regmap_reg_range(HDMI_RX_PDEC_AIF_CTRL, HDMI_RX_PDEC_AIF_PB0),
-	regmap_reg_range(HDMI_RX_PDEC_AVI_PB, HDMI_RX_PDEC_AVI_PB),
 	regmap_reg_range(HDMI_RX_HDMI20_CONTROL, HDMI_RX_CHLOCK_CONFIG),
 	regmap_reg_range(HDMI_RX_SCDC_REGS0, HDMI_RX_SCDC_REGS2),
 	regmap_reg_range(HDMI_RX_SCDC_WRDATA0, HDMI_RX_SCDC_WRDATA0),
@@ -488,7 +488,13 @@ static void rk628_dbg_en_node(struct rk628 *rk628)
 
 void rk628_debugfs_create(struct rk628 *rk628)
 {
-	rk628->debug_dir = debugfs_create_dir(dev_name(rk628->dev), debugfs_lookup("rk628", NULL));
+	struct dentry *debugfs, *debugfs_tmp = debugfs_lookup("rk628", NULL);
+
+	debugfs = debugfs_tmp;
+	if (!debugfs)
+		debugfs = debugfs_create_dir("rk628", NULL);
+	dput(debugfs_tmp);
+	rk628->debug_dir = debugfs_create_dir(dev_name(rk628->dev), debugfs);
 	if (IS_ERR(rk628->debug_dir))
 		return;
 
@@ -497,6 +503,12 @@ void rk628_debugfs_create(struct rk628 *rk628)
 	rk628_post_process_pattern_node(rk628);
 }
 EXPORT_SYMBOL(rk628_debugfs_create);
+
+void rk628_debugfs_remove(struct rk628 *rk628)
+{
+	debugfs_remove_recursive(rk628->debug_dir);
+}
+EXPORT_SYMBOL(rk628_debugfs_remove);
 
 struct rk628 *rk628_i2c_register(struct i2c_client *client)
 {

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (c) 2023 Fuzhou Rockchip Electronics Co., Ltd. */
+/* Copyright (c) 2023 Rockchip Electronics Co., Ltd. */
 
 #ifndef _RKVPSS_DEV_H
 #define _RKVPSS_DEV_H
@@ -27,6 +27,12 @@ enum {
 	T_CMD_DEQUEUE,
 	T_CMD_LEN,
 	T_CMD_END,
+};
+
+enum {
+	VPSS_UNITE_LEFT = 0,
+	VPSS_UNITE_RIGHT,
+	VPSS_UNITE_MAX,
 };
 
 struct rkvpss_rdbk_info {
@@ -65,8 +71,18 @@ struct rkvpss_device {
 
 	bool mir_en;
 	bool cmsc_upd;
+	u32 unite_mode;
+	u8 unite_index;
+	bool stopping;
+	wait_queue_head_t stop_done;
+	unsigned int irq_ends;
+	unsigned int irq_ends_mask;
 
 	bool is_probe_end;
+	bool is_suspend;
+	bool is_idle;
+	struct completion pm_suspend_wait_fe;
+	struct rkisp_vpss_frame_info frame_info;
 };
 
 void rkvpss_pipeline_default_fmt(struct rkvpss_device *dev);

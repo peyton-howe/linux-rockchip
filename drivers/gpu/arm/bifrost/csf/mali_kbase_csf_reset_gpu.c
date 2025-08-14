@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -233,28 +233,37 @@ static void kbase_csf_reset_end_hw_access(struct kbase_device *kbdev,
 
 static void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 {
+	unsigned long flags;
+
 	kbase_io_history_dump(kbdev);
 
+	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 	dev_err(kbdev->dev, "Register state:");
-	dev_err(kbdev->dev, "  GPU_IRQ_RAWSTAT=0x%08x   GPU_STATUS=0x%08x  MCU_STATUS=0x%08x",
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_IRQ_RAWSTAT)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_STATUS)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(MCU_STATUS)));
-	dev_err(kbdev->dev, "  JOB_IRQ_RAWSTAT=0x%08x   MMU_IRQ_RAWSTAT=0x%08x   GPU_FAULTSTATUS=0x%08x",
-		kbase_reg_read(kbdev, JOB_CONTROL_REG(JOB_IRQ_RAWSTAT)),
-		kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_RAWSTAT)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_FAULTSTATUS)));
-	dev_err(kbdev->dev, "  GPU_IRQ_MASK=0x%08x   JOB_IRQ_MASK=0x%08x   MMU_IRQ_MASK=0x%08x",
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_IRQ_MASK)),
-		kbase_reg_read(kbdev, JOB_CONTROL_REG(JOB_IRQ_MASK)),
-		kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_MASK)));
-	dev_err(kbdev->dev, "  PWR_OVERRIDE0=0x%08x   PWR_OVERRIDE1=0x%08x",
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(PWR_OVERRIDE0)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(PWR_OVERRIDE1)));
-	dev_err(kbdev->dev, "  SHADER_CONFIG=0x%08x   L2_MMU_CONFIG=0x%08x   TILER_CONFIG=0x%08x",
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(SHADER_CONFIG)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(L2_MMU_CONFIG)),
-		kbase_reg_read(kbdev, GPU_CONTROL_REG(TILER_CONFIG)));
+	dev_err(kbdev->dev, "  GPU_IRQ_RAWSTAT=0x%08x  GPU_STATUS=0x%08x MCU_STATUS=0x%08x",
+		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_RAWSTAT)),
+		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_STATUS)),
+		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(MCU_STATUS)));
+	dev_err(kbdev->dev,
+		"  JOB_IRQ_RAWSTAT=0x%08x  MMU_IRQ_RAWSTAT=0x%08x  GPU_FAULTSTATUS=0x%08x",
+		kbase_reg_read32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_RAWSTAT)),
+		kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_RAWSTAT)),
+		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_FAULTSTATUS)));
+	dev_err(kbdev->dev, "  GPU_IRQ_MASK=0x%08x  JOB_IRQ_MASK=0x%08x  MMU_IRQ_MASK=0x%08x",
+		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_MASK)),
+		kbase_reg_read32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_MASK)),
+		kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK)));
+	if (kbdev->gpu_props.gpu_id.arch_id < GPU_ID_ARCH_MAKE(14, 10, 0)) {
+		dev_err(kbdev->dev, "  PWR_OVERRIDE0=0x%08x  PWR_OVERRIDE1=0x%08x",
+			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(PWR_OVERRIDE0)),
+			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(PWR_OVERRIDE1)));
+		dev_err(kbdev->dev,
+			"  SHADER_CONFIG=0x%08x  L2_MMU_CONFIG=0x%08x  TILER_CONFIG=0x%08x",
+			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(SHADER_CONFIG)),
+			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(L2_MMU_CONFIG)),
+			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(TILER_CONFIG)));
+	}
+
+	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 }
 
 /**
@@ -397,6 +406,7 @@ static int kbase_csf_reset_gpu_now(struct kbase_device *kbdev, bool firmware_ini
 	 */
 	if (likely(firmware_inited))
 		kbase_csf_scheduler_reset(kbdev);
+
 	cancel_work_sync(&kbdev->csf.firmware_reload_work);
 
 	dev_dbg(kbdev->dev, "Disable GPU hardware counters.\n");
@@ -404,6 +414,7 @@ static int kbase_csf_reset_gpu_now(struct kbase_device *kbdev, bool firmware_ini
 	kbase_hwcnt_context_disable(kbdev->hwcnt_gpu_ctx);
 
 	ret = kbase_csf_reset_gpu_once(kbdev, firmware_inited, silent);
+
 	if (ret == SOFT_RESET_FAILED) {
 		dev_err(kbdev->dev, "Soft-reset failed");
 		goto err;
@@ -493,6 +504,11 @@ static void kbase_csf_reset_gpu_worker(struct work_struct *data)
 
 bool kbase_prepare_to_reset_gpu(struct kbase_device *kbdev, unsigned int flags)
 {
+	if (kbase_pm_is_gpu_lost(kbdev)) {
+		/* GPU access has been removed, reset will be done by Arbiter instead */
+		return false;
+	}
+
 	if (flags & RESET_FLAGS_HWC_UNRECOVERABLE_ERROR)
 		kbase_hwcnt_backend_csf_on_unrecoverable_error(
 			&kbdev->hwcnt_gpu_iface);

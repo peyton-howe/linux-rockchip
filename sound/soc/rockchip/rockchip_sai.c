@@ -2,7 +2,7 @@
 /*
  * ALSA SoC Audio Layer - Rockchip SAI Controller driver
  *
- * Copyright (c) 2022 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2022 Rockchip Electronics Co., Ltd.
  */
 
 #include <linux/module.h>
@@ -75,6 +75,7 @@ struct rk_sai_dev {
 	bool is_clk_auto;
 	bool is_mclk_calibrate;
 	bool is_tx_auto_gate; /* auto gate clk when TX FIFO empty */
+	bool no_set_mclk;
 };
 
 static const struct sai_of_quirks {
@@ -87,29 +88,61 @@ static const struct sai_of_quirks {
 	},
 };
 
-static int rockchip_sai_fsync_lost_detect(struct rk_sai_dev *sai, bool en)
+static bool rockchip_sai_stream_valid(struct snd_pcm_substream *substream,
+				      struct snd_soc_dai *dai)
 {
-	unsigned int fw, cnt;
+	struct rk_sai_dev *sai = snd_soc_dai_get_drvdata(dai);
+
+	if (!substream)
+		return false;
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
+	    sai->has_playback)
+		return true;
+
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE &&
+	    sai->has_capture)
+		return true;
+
+	return false;
+}
+
+static int rockchip_sai_fsync_lost_threshold_cfg(struct rk_sai_dev *sai,
+						 unsigned int sample_rate)
+{
+	unsigned int div, cnt, mclk_rate;
 
 	if (sai->is_master_mode || sai->version < SAI_VER_2311)
 		return 0;
 
-	regmap_read(sai->regmap, SAI_FSCR, &fw);
-	cnt = SAI_FSCR_FW_V(fw) << 1; /* two fsync lost */
+	regmap_read(sai->regmap, SAI_CKR, &div);
+	div = SAI_CKR_MDIV_V(div);
+	mclk_rate = clk_get_rate(sai->mclk) / div;
+
+	cnt = (mclk_rate + sample_rate - 1) / sample_rate;
+	cnt = cnt << 1; /* two fsync lost */
+
+	/* the cnt is cycles of SCLK from cru, not external SCLK */
+	regmap_update_bits(sai->regmap, SAI_FS_TIMEOUT,
+			   SAI_FS_TIMEOUT_VAL_MASK,
+			   SAI_FS_TIMEOUT_VAL(cnt));
+
+	return 0;
+}
+
+static int rockchip_sai_fsync_lost_detect(struct rk_sai_dev *sai, bool en)
+{
+	if (sai->is_master_mode || sai->version < SAI_VER_2311)
+		return 0;
 
 	regmap_update_bits(sai->regmap, SAI_INTCR,
 			   SAI_INTCR_FSLOSTC, SAI_INTCR_FSLOSTC);
 	regmap_update_bits(sai->regmap, SAI_INTCR,
 			   SAI_INTCR_FSLOST_MASK,
 			   SAI_INTCR_FSLOST(en));
-	/*
-	 * the cnt is cycles of SCLK from cru, not external SCLK.
-	 * so, suggest to set SCLK freq equal to external SCLK
-	 * in SLAVE mode.
-	 */
 	regmap_update_bits(sai->regmap, SAI_FS_TIMEOUT,
-			   SAI_FS_TIMEOUT_VAL_MASK | SAI_FS_TIMEOUT_EN_MASK,
-			   SAI_FS_TIMEOUT_VAL(cnt) | SAI_FS_TIMEOUT_EN(en));
+			   SAI_FS_TIMEOUT_EN_MASK,
+			   SAI_FS_TIMEOUT_EN(en));
 
 	return 0;
 }
@@ -182,12 +215,11 @@ static int rockchip_sai_runtime_suspend(struct device *dev)
 	rockchip_sai_fsync_lost_detect(sai, 0);
 	rockchip_sai_fsync_err_detect(sai, 0);
 
-	if (sai->is_master_mode)
-		regmap_update_bits(sai->regmap, SAI_XFER,
-				   SAI_XFER_CLK_MASK |
-				   SAI_XFER_FSS_MASK,
-				   SAI_XFER_CLK_DIS |
-				   SAI_XFER_FSS_DIS);
+	regmap_update_bits(sai->regmap, SAI_XFER,
+			   SAI_XFER_CLK_MASK |
+			   SAI_XFER_FSS_MASK,
+			   SAI_XFER_CLK_DIS |
+			   SAI_XFER_FSS_DIS);
 
 	rockchip_sai_poll_clk_idle(sai);
 
@@ -524,6 +556,9 @@ static int rockchip_sai_hw_params(struct snd_pcm_substream *substream,
 	unsigned int ch_per_lane, lanes, slot_width;
 	unsigned int val, fscr, reg, fifo;
 
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return 0;
+
 	dma_data = snd_soc_dai_get_dma_data(dai, substream);
 	dma_data->maxburst = MAXBURST_PER_FIFO * params_channels(params) / 2;
 
@@ -596,9 +631,16 @@ static int rockchip_sai_hw_params(struct snd_pcm_substream *substream,
 
 	if (sai->is_master_mode) {
 		bclk_rate = sai->fw_ratio * slot_width * ch_per_lane * params_rate(params);
-		if (sai->is_clk_auto)
+		if (sai->is_clk_auto && !sai->no_set_mclk)
 			clk_set_rate(sai->mclk, bclk_rate);
+
 		mclk_rate = clk_get_rate(sai->mclk);
+		if (mclk_rate < bclk_rate) {
+			dev_err(sai->dev, "Mismatch mclk: %u, at least %u\n",
+				mclk_rate, bclk_rate);
+			return -EINVAL;
+		}
+
 		div_bclk = DIV_ROUND_CLOSEST(mclk_rate, bclk_rate);
 		mclk_req_rate = bclk_rate * div_bclk;
 
@@ -613,6 +655,8 @@ static int rockchip_sai_hw_params(struct snd_pcm_substream *substream,
 				   SAI_CKR_MDIV(div_bclk));
 	}
 
+	rockchip_sai_fsync_lost_threshold_cfg(sai, params_rate(params));
+
 	rockchip_utils_get_performance(substream, params, dai, fifo);
 
 	return 0;
@@ -621,6 +665,9 @@ static int rockchip_sai_hw_params(struct snd_pcm_substream *substream,
 static int rockchip_sai_hw_free(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return 0;
+
 	rockchip_utils_put_performance(substream, dai);
 
 	return 0;
@@ -631,24 +678,25 @@ static int rockchip_sai_prepare(struct snd_pcm_substream *substream,
 {
 	struct rk_sai_dev *sai = snd_soc_dai_get_drvdata(dai);
 
-	if (sai->is_master_mode) {
-		/*
-		 * Should wait for one BCLK ready after DIV and then ungate
-		 * output clk to achieve the clean clk.
-		 *
-		 * The best way is to use delay per samplerate, but, the max time
-		 * is quite a tiny value, so, let's make it simple to use the max
-		 * time.
-		 *
-		 * The max BCLK cycle time is: 15.6us @ 8K-8Bit (64K BCLK)
-		 */
-		udelay(20);
-		regmap_update_bits(sai->regmap, SAI_XFER,
-				   SAI_XFER_CLK_MASK |
-				   SAI_XFER_FSS_MASK,
-				   SAI_XFER_CLK_EN |
-				   SAI_XFER_FSS_EN);
-	}
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return 0;
+
+	/*
+	 * Should wait for one BCLK ready after DIV and then ungate
+	 * output clk to achieve the clean clk.
+	 *
+	 * The best way is to use delay per samplerate, but, the max time
+	 * is quite a tiny value, so, let's make it simple to use the max
+	 * time.
+	 *
+	 * The max BCLK cycle time is: 15.6us @ 8K-8Bit (64K BCLK)
+	 */
+	udelay(20);
+	regmap_update_bits(sai->regmap, SAI_XFER,
+			   SAI_XFER_CLK_MASK |
+			   SAI_XFER_FSS_MASK,
+			   SAI_XFER_CLK_EN |
+			   SAI_XFER_FSS_EN);
 
 	rockchip_sai_fsync_lost_detect(sai, 1);
 	rockchip_sai_fsync_err_detect(sai, 1);
@@ -737,7 +785,18 @@ static int rockchip_sai_path_prepare(struct rk_sai_dev *sai,
 static int rockchip_sai_parse_paths(struct rk_sai_dev *sai,
 				    struct device_node *np)
 {
+	unsigned int val;
 	int ret;
+
+	if (!device_property_read_u32(sai->dev, "rockchip,tdm-tx-lanes", &val)) {
+		if ((val >= 1) && (val <= 4))
+			sai->tx_lanes = val;
+	}
+
+	if (!device_property_read_u32(sai->dev, "rockchip,tdm-rx-lanes", &val)) {
+		if ((val >= 1) && (val <= 4))
+			sai->rx_lanes = val;
+	}
 
 	ret = rockchip_sai_path_prepare(sai, np, 0);
 	if (ret < 0) {
@@ -759,6 +818,9 @@ static int rockchip_sai_trigger(struct snd_pcm_substream *substream,
 {
 	struct rk_sai_dev *sai = snd_soc_dai_get_drvdata(dai);
 	int ret = 0;
+
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return 0;
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
@@ -860,9 +922,11 @@ static int rockchip_sai_set_sysclk(struct snd_soc_dai *dai, int clk_id,
 		return ret;
 	}
 
-	ret = clk_set_rate(sai->mclk, freq);
-	if (ret)
-		dev_err(sai->dev, "Failed to set mclk %d\n", ret);
+	if (!sai->no_set_mclk) {
+		ret = clk_set_rate(sai->mclk, freq);
+		if (ret)
+			dev_err(sai->dev, "Failed to set mclk %d\n", ret);
+	}
 
 	return ret;
 }
@@ -934,6 +998,9 @@ static int rockchip_sai_startup(struct snd_pcm_substream *substream,
 	struct rk_sai_dev *sai = snd_soc_dai_get_drvdata(dai);
 	int stream = substream->stream;
 
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return 0;
+
 	if (sai->substreams[stream])
 		return -EBUSY;
 
@@ -949,6 +1016,9 @@ static void rockchip_sai_shutdown(struct snd_pcm_substream *substream,
 				      struct snd_soc_dai *dai)
 {
 	struct rk_sai_dev *sai = snd_soc_dai_get_drvdata(dai);
+
+	if (!rockchip_sai_stream_valid(substream, dai))
+		return;
 
 	sai->substreams[substream->stream] = NULL;
 }
@@ -1127,6 +1197,21 @@ static int rockchip_sai_init_dai(struct rk_sai_dev *sai, struct resource *res,
 	struct snd_soc_dai_driver *dai;
 	struct property *dma_names;
 	const char *dma_name;
+	unsigned int val;
+
+	if (!device_property_read_u32(sai->dev, "rockchip,slot-width", &val)) {
+		if ((val < 8) || (val > 32)) {
+			dev_err(sai->dev, "Slot width should be in range [8, 32]\n");
+			return -EINVAL;
+		}
+
+		regmap_update_bits(sai->regmap, SAI_TXCR,
+				   SAI_XCR_SBW_MASK,
+				   SAI_XCR_SBW(val));
+		regmap_update_bits(sai->regmap, SAI_RXCR,
+				   SAI_XCR_SBW_MASK,
+				   SAI_XCR_SBW(val));
+	}
 
 	of_property_for_each_string(node, "dma-names", dma_names, dma_name) {
 		if (!strcmp(dma_name, "tx"))
@@ -1144,7 +1229,7 @@ static int rockchip_sai_init_dai(struct rk_sai_dev *sai, struct resource *res,
 		dai->playback.stream_name = "Playback";
 		dai->playback.channels_min = 1;
 		dai->playback.channels_max = 512;
-		dai->playback.rates = SNDRV_PCM_RATE_8000_384000;
+		dai->playback.rates = SNDRV_PCM_RATE_CONTINUOUS;
 		dai->playback.formats = SNDRV_PCM_FMTBIT_S8 |
 					SNDRV_PCM_FMTBIT_S16_LE |
 					SNDRV_PCM_FMTBIT_S24_LE |
@@ -1160,7 +1245,7 @@ static int rockchip_sai_init_dai(struct rk_sai_dev *sai, struct resource *res,
 		dai->capture.stream_name = "Capture";
 		dai->capture.channels_min = 1;
 		dai->capture.channels_max = 512;
-		dai->capture.rates = SNDRV_PCM_RATE_8000_384000;
+		dai->capture.rates = SNDRV_PCM_RATE_CONTINUOUS;
 		dai->capture.formats = SNDRV_PCM_FMTBIT_S8 |
 				       SNDRV_PCM_FMTBIT_S16_LE |
 				       SNDRV_PCM_FMTBIT_S24_LE |
@@ -1812,6 +1897,23 @@ static int rockchip_sai_wait_time_init(struct rk_sai_dev *sai)
 	return 0;
 }
 
+static int rockchip_sai_register_platform(struct device *dev)
+{
+	int ret = 0;
+
+	if (device_property_read_bool(dev, "rockchip,no-dmaengine")) {
+		dev_info(dev, "Used for Multi-DAI\n");
+		return 0;
+	}
+
+	if (device_property_read_bool(dev, "rockchip,digital-loopback"))
+		ret = devm_snd_dmaengine_dlp_register(dev, &dconfig);
+	else
+		ret = devm_snd_dmaengine_pcm_register(dev, NULL, 0);
+
+	return ret;
+}
+
 static int rockchip_sai_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -1875,6 +1977,9 @@ static int rockchip_sai_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "Have mclk compensation feature\n");
 	}
 
+	sai->no_set_mclk =
+		device_property_read_bool(&pdev->dev, "rockchip,mclk-no-set");
+
 	sai->mclk = devm_clk_get(&pdev->dev, "mclk");
 	if (IS_ERR(sai->mclk)) {
 		dev_err(&pdev->dev, "Failed to get mclk\n");
@@ -1922,23 +2027,13 @@ static int rockchip_sai_probe(struct platform_device *pdev)
 			goto err_runtime_disable;
 	}
 
-	ret = devm_snd_soc_register_component(&pdev->dev,
-					      &rockchip_sai_component,
-					      dai, 1);
+	ret = rockchip_sai_register_platform(&pdev->dev);
 	if (ret)
 		goto err_runtime_suspend;
 
-	if (device_property_read_bool(&pdev->dev, "rockchip,no-dmaengine")) {
-		clk_disable_unprepare(sai->hclk);
-		dev_info(&pdev->dev, "Used for Multi-DAI\n");
-		return 0;
-	}
-
-	if (device_property_read_bool(&pdev->dev, "rockchip,digital-loopback"))
-		ret = devm_snd_dmaengine_dlp_register(&pdev->dev, &dconfig);
-	else
-		ret = devm_snd_dmaengine_pcm_register(&pdev->dev, NULL, 0);
-
+	ret = devm_snd_soc_register_component(&pdev->dev,
+					      &rockchip_sai_component,
+					      dai, 1);
 	if (ret)
 		goto err_runtime_suspend;
 

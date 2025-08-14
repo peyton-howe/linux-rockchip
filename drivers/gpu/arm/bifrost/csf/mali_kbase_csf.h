@@ -237,6 +237,19 @@ int kbase_csf_queue_group_handle_is_valid(struct kbase_context *kctx,
 	u8 group_handle);
 
 /**
+ * kbase_csf_queue_group_clear_faults - Re-enable CS Fault reporting.
+ *
+ * @kctx:	Pointer to the kbase context within which the
+ *		CS Faults for the queues has to be re-enabled.
+ * @clear_faults:	Pointer to the structure which contains details of the
+ *		queues for which the CS Fault reporting has to be re-enabled.
+ *
+ * Return:	0 on success, or negative on failure.
+ */
+int kbase_csf_queue_group_clear_faults(struct kbase_context *kctx,
+				       struct kbase_ioctl_queue_group_clear_faults *clear_faults);
+
+/**
  * kbase_csf_queue_group_create - Create a GPU command queue group.
  *
  * @kctx:	Pointer to the kbase context within which the
@@ -359,6 +372,22 @@ int kbase_csf_setup_dummy_user_reg_page(struct kbase_device *kbdev);
  * @kbdev: Instance of a GPU platform device that implements a CSF interface.
  */
 void kbase_csf_free_dummy_user_reg_page(struct kbase_device *kbdev);
+
+/**
+ * kbase_csf_pending_gpuq_kick_queues_init - Initialize the data used for handling
+ *                                           GPU queue kicks.
+ *
+ * @kbdev: Instance of a GPU platform device that implements a CSF interface.
+ */
+void kbase_csf_pending_gpuq_kick_queues_init(struct kbase_device *kbdev);
+
+/**
+ * kbase_csf_pending_gpuq_kick_queues_term - De-initialize the data used for handling
+ *                                           GPU queue kicks.
+ *
+ * @kbdev: Instance of a GPU platform device that implements a CSF interface.
+ */
+void kbase_csf_pending_gpuq_kick_queues_term(struct kbase_device *kbdev);
 
 /**
  * kbase_csf_ring_csg_doorbell - ring the doorbell for a CSG interface.
@@ -502,5 +531,26 @@ static inline u64 kbase_csf_ktrace_gpu_cycle_cnt(struct kbase_device *kbdev)
 	return 0;
 #endif
 }
+
+/**
+ * kbase_csf_process_queue_kick() - Process a pending kicked GPU command queue.
+ *
+ * @queue: Pointer to the queue to process.
+ *
+ * This function starts the pending queue, for which the work
+ * was previously submitted via ioctl call from application thread.
+ * If the queue is already scheduled and resident, it will be started
+ * right away, otherwise once the group is made resident.
+ */
+void kbase_csf_process_queue_kick(struct kbase_queue *queue);
+
+/**
+ * kbase_csf_process_protm_event_request - Handle protected mode switch request
+ *
+ * @group: The group to handle protected mode request
+ *
+ * Request to switch to protected mode.
+ */
+void kbase_csf_process_protm_event_request(struct kbase_queue_group *group);
 
 #endif /* _KBASE_CSF_H_ */

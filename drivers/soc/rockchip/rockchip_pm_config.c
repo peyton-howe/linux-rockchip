@@ -1,7 +1,7 @@
 /*
  * Rockchip Generic power configuration support.
  *
- * Copyright (c) 2017 ROCKCHIP, Co. Ltd.
+ * Copyright (c) 2017 Rockchip Electronics Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -351,8 +351,12 @@ static int parse_mcu_sleep_config(struct device_node *node)
 		goto free_mcu_mode;
 	}
 
-	/* Initialize core tag */
-	memset((void *)res.a1, 0, sizeof(struct rk_mcu_sleep_tags));
+	/* Initialize core tag.
+	 * Compiler may optimize the following code into: "str xzr, ..." or "stp xzr, xzr, ..."
+	 * if using memset, that can't guarantee the target address to be 8-byte alignment.
+	 * So we use memset_io instead.
+	 */
+	memset_io((void *)res.a1, 0, sizeof(struct rk_mcu_sleep_tags));
 	config = (struct rk_mcu_sleep_tags *)res.a1;
 	config->core.hdr.tag = RK_ATAG_MCU_SLP_CORE;
 	config->core.hdr.size = sizeof(struct rk_mcu_sleep_core_tag) / sizeof(u32);
@@ -430,7 +434,7 @@ out:
 
 static int parse_io_config(struct device *dev)
 {
-	int ret = 0, cnt;
+	int ret = 0, cnt, i;
 	struct device_node *node = dev->of_node;
 	struct rk_sleep_config *config = &sleep_config[RK_PM_MEM];
 
@@ -452,6 +456,13 @@ static int parse_io_config(struct device *dev)
 		}
 
 		config->sleep_io_config_cnt = cnt;
+
+		sip_smc_set_suspend_mode(SLEEP_IO_CONFIG, RK_PM_SLEEP_IO_CFG_CNT, cnt);
+
+		for (i = 0; i < cnt; i++)
+			sip_smc_set_suspend_mode(SLEEP_IO_CONFIG,
+						 RK_PM_SLEEP_IO_CFG_VAL,
+						 config->sleep_io_config[i]);
 	} else {
 		dev_dbg(dev, "not set sleep-pin-config\n");
 	}

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2018, 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2018-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -16,64 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, you can access it online at
  * http://www.gnu.org/licenses/gpl-2.0.html.
- *
- */
-
-/*
- * Hardware counter types.
- * Contains structures for describing the physical layout of hardware counter
- * dump buffers and enable maps within a system.
- *
- * Also contains helper functions for manipulation of these dump buffers and
- * enable maps.
- *
- * Through use of these structures and functions, hardware counters can be
- * enabled, copied, accumulated, and generally manipulated in a generic way,
- * regardless of the physical counter dump layout.
- *
- * Terminology:
- *
- * Hardware Counter System:
- *   A collection of hardware counter groups, making a full hardware counter
- *   system.
- * Hardware Counter Group:
- *   A group of Hardware Counter Blocks (e.g. a t62x might have more than one
- *   core group, so has one counter group per core group, where each group
- *   may have a different number and layout of counter blocks).
- * Hardware Counter Block:
- *   A block of hardware counters (e.g. shader block, tiler block).
- * Hardware Counter Block Instance:
- *   An instance of a Hardware Counter Block (e.g. an MP4 GPU might have
- *   4 shader block instances).
- *
- * Block Header:
- *   A header value inside a counter block. Headers don't count anything,
- *   so it is only valid to copy or zero them. Headers are always the first
- *   values in the block.
- * Block Counter:
- *   A counter value inside a counter block. Counters can be zeroed, copied,
- *   or accumulated. Counters are always immediately after the headers in the
- *   block.
- * Block Value:
- *   A catch-all term for block headers and block counters.
- *
- * Enable Map:
- *   An array of u64 bitfields, where each bit either enables exactly one
- *   block value, or is unused (padding).
- * Dump Buffer:
- *   An array of u64 values, where each u64 corresponds either to one block
- *   value, or is unused (padding).
- * Availability Mask:
- *   A bitfield, where each bit corresponds to whether a block instance is
- *   physically available (e.g. an MP3 GPU may have a sparse core mask of
- *   0b1011, meaning it only has 3 cores but for hardware counter dumps has the
- *   same dump buffer layout as an MP4 GPU with a core mask of 0b1111. In this
- *   case, the availability mask might be 0b1011111 (the exact layout will
- *   depend on the specific hardware architecture), with the 3 extra early bits
- *   corresponding to other block instances in the hardware counter system).
- * Metadata:
- *   Structure describing the physical layout of the enable map and dump buffers
- *   for a specific hardware counter system.
  *
  */
 
@@ -218,14 +160,114 @@ struct kbase_hwcnt_block_metadata {
  *                    the Availability Masks of the blocks within the group
  *                    described by this metadata start.
  */
-struct kbase_hwcnt_group_metadata {
-	u64 type;
-	size_t blk_cnt;
-	const struct kbase_hwcnt_block_metadata *blk_metadata;
-	size_t enable_map_index;
-	size_t dump_buf_index;
-	size_t avail_mask_index;
-};
+static inline void kbase_hwcnt_set_avail_mask(struct kbase_hwcnt_avail_mask *avail_mask, u64 u0,
+					      u64 u1)
+{
+	/* If KBASE_HWCNT_AVAIL_MASK_ELEM_COUNT gets updated, we must modify the signature of
+	 * kbase_hwcnt_set_avail_mask() so that all elements continue to be set.
+	 */
+	BUILD_BUG_ON(KBASE_HWCNT_AVAIL_MASK_ELEM_COUNT != 2);
+
+	avail_mask->mask[0] = u0;
+	avail_mask->mask[1] = u1;
+}
+
+/**
+ * kbase_hwcnt_avail_masks_equal() - Compare two HWC availability masks
+ * @avail_mask0: First mask to compare
+ * @avail_mask1: Second mask to compare
+ *
+ * Return: 1 if masks are equal. Otherwise, 0.
+ */
+static inline bool kbase_hwcnt_avail_masks_equal(const struct kbase_hwcnt_avail_mask *avail_mask0,
+						 const struct kbase_hwcnt_avail_mask *avail_mask1)
+{
+	return (!memcmp(avail_mask0, avail_mask1, sizeof(*avail_mask0)));
+}
+
+/**
+ * kbase_hwcnt_avail_masks_equal_values() - Compare two HWC availability masks
+ * @avail_mask: Kask to compare
+ * @u0: First element of mask to compare against
+ * @u1: Second element of mask to compare against
+ *
+ * Return: 1 if masks are equal. Otherwise, 0.
+ */
+static inline bool
+kbase_hwcnt_avail_masks_equal_values(const struct kbase_hwcnt_avail_mask *avail_mask, u64 u0,
+				     u64 u1)
+{
+	BUILD_BUG_ON(KBASE_HWCNT_AVAIL_MASK_ELEM_COUNT != 2);
+	return ((avail_mask->mask[0] == u0) && (avail_mask->mask[1] == u1));
+}
+
+/**
+ * kbase_hwcnt_cp_avail_mask - Copy one avail mask into another
+ * @dst_avail_mask: Destination mask
+ * @src_avail_mask: Source Mask
+ */
+static inline void kbase_hwcnt_cp_avail_mask(struct kbase_hwcnt_avail_mask *dst_avail_mask,
+					     const struct kbase_hwcnt_avail_mask *src_avail_mask)
+{
+	memcpy(dst_avail_mask, src_avail_mask, sizeof(*dst_avail_mask));
+}
+
+/**
+ * kbase_hwcnt_set_avail_mask_bits() - Set a bitfield value into a large bitmask
+ *
+ * @avail_mask: Pointer to destination HWC mask, which is comprised of an  array of u64 elements
+ * @offset_in_bits: The offset into which to place the value in the bitmask. The value being
+ *                  placed is expected to be fully contained by the array of bitmask elements.
+ * @length_in_bits: The length of the value being placed in the bitmask. Assumed to be no more
+ *                  than 64 bits in length.
+ * @value:          The source value to be written into the bitmask.
+ */
+static inline void kbase_hwcnt_set_avail_mask_bits(struct kbase_hwcnt_avail_mask *avail_mask,
+						   size_t offset_in_bits, size_t length_in_bits,
+						   u64 value)
+{
+	size_t arr_offset = offset_in_bits / 64;
+	size_t bits_set = 0;
+
+	if (!length_in_bits)
+		return;
+
+	WARN_ON(length_in_bits > 64);
+	if (WARN_ON((offset_in_bits + length_in_bits) > (KBASE_HWCNT_AVAIL_MASK_ELEM_COUNT << 6)))
+		return;
+
+	do {
+		size_t remaining_to_set = length_in_bits - bits_set;
+		size_t start_dest_bit_in_word = (offset_in_bits + bits_set) - (arr_offset * 64);
+		size_t bits_that_fit_into_this_word =
+			min(64 - start_dest_bit_in_word, remaining_to_set);
+
+		uint64_t dest_mask, mask, source_mask;
+		uint64_t source_fragment;
+
+		if (bits_that_fit_into_this_word == 64) {
+			mask = U64_MAX;
+			source_mask = U64_MAX;
+			dest_mask = U64_MAX;
+		} else {
+			mask = (1ULL << bits_that_fit_into_this_word) - 1;
+			source_mask = ((1ULL << (bits_that_fit_into_this_word)) - 1) << bits_set;
+			dest_mask = mask << start_dest_bit_in_word;
+		}
+
+		source_fragment = (value & source_mask) >> bits_set;
+
+		if (WARN_ON(arr_offset >= KBASE_HWCNT_AVAIL_MASK_ELEM_COUNT))
+			break;
+
+		avail_mask->mask[arr_offset] &= ~dest_mask;
+		avail_mask->mask[arr_offset] |=
+			((source_fragment & mask) << start_dest_bit_in_word);
+
+		arr_offset++;
+		bits_set += bits_that_fit_into_this_word;
+	} while (bits_set < length_in_bits);
+}
 
 /**
  * struct kbase_hwcnt_metadata - Metadata describing the memory layout
@@ -807,9 +849,8 @@ kbase_hwcnt_enable_map_any_enabled(const struct kbase_hwcnt_enable_map *enable_m
 	if (enable_map->metadata->clk_cnt > 0 && (enable_map->clk_enable_map & clk_enable_map_mask))
 		return true;
 
-	kbase_hwcnt_metadata_for_each_block(enable_map->metadata, grp, blk, blk_inst)
-	{
-		if (kbase_hwcnt_enable_map_block_enabled(enable_map, grp, blk, blk_inst))
+	kbase_hwcnt_metadata_for_each_block(enable_map->metadata, blk, blk_inst) {
+		if (kbase_hwcnt_enable_map_block_enabled(enable_map, blk, blk_inst))
 			return true;
 	}
 

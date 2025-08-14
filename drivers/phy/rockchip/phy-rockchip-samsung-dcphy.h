@@ -65,7 +65,7 @@ struct samsung_mipi_dcphy {
 		unsigned long long rate;
 		u8 prediv;
 		u16 fbdiv;
-		long dsm;
+		u16 dsm;
 		u8 scaler;
 
 		bool ssc_en;
@@ -75,6 +75,7 @@ struct samsung_mipi_dcphy {
 
 	int (*stream_on)(struct csi2_dphy *dphy, struct v4l2_subdev *sd);
 	int (*stream_off)(struct csi2_dphy *dphy, struct v4l2_subdev *sd);
+	struct resource *res;
 };
 
 #endif

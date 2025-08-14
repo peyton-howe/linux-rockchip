@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2014-2016, 2018-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -27,23 +27,29 @@
 #include <mali_kbase_reset_gpu.h>
 #include <mmu/mali_kbase_mmu.h>
 
-#if !IS_ENABLED(CONFIG_MALI_BIFROST_NO_MALI)
-bool kbase_is_gpu_removed(struct kbase_device *kbdev)
+/**
+ * busy_wait_cache_operation - Wait for a pending cache flush to complete
+ *
+ * @kbdev:   Pointer of kbase device.
+ * @irq_bit: IRQ bit cache flush operation to wait on.
+ *
+ * It will reset GPU if the wait fails.
+ *
+ * Return: 0 on success, error code otherwise.
+ */
+static int busy_wait_cache_operation(struct kbase_device *kbdev, u32 irq_bit)
 {
-	u32 val;
+	const ktime_t wait_loop_start = ktime_get_raw();
+	const u32 wait_time_ms = kbase_get_timeout_ms(kbdev, MMU_AS_INACTIVE_WAIT_TIMEOUT);
+	bool completed = false;
+	s64 diff;
+	u32 irq_bits_to_check = irq_bit;
 
-	val = kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_ID));
-
-	return val == 0;
-}
-#endif /* !IS_ENABLED(CONFIG_MALI_BIFROST_NO_MALI) */
-
-static int busy_wait_on_irq(struct kbase_device *kbdev, u32 irq_bit)
-{
-	char *irq_flag_name;
-	/* Previously MMU-AS command was used for L2 cache flush on page-table update.
-	 * And we're using the same max-loops count for GPU command, because amount of
-	 * L2 cache flush overhead are same between them.
+	/* hwaccess_lock must be held to prevent concurrent threads from
+	 * cleaning the IRQ bits, otherwise it could be possible for this thread
+	 * to lose the event it is waiting for. In particular, concurrent attempts
+	 * to reset the GPU could go undetected and this thread would miss
+	 * the completion of the cache flush operation it is waiting for.
 	 */
 	unsigned int max_loops = KBASE_AS_INACTIVE_MAX_LOOPS;
 
@@ -143,7 +149,7 @@ int kbase_gpu_cache_flush_and_busy_wait(struct kbase_device *kbdev,
 				irq_mask & ~CLEAN_CACHES_COMPLETED);
 
 		/* busy wait irq status to be enabled */
-		ret = busy_wait_on_irq(kbdev, (u32)CLEAN_CACHES_COMPLETED);
+		ret = busy_wait_cache_operation(kbdev, CLEAN_CACHES_COMPLETED);
 		if (ret)
 			return ret;
 
@@ -164,7 +170,7 @@ int kbase_gpu_cache_flush_and_busy_wait(struct kbase_device *kbdev,
 	kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_COMMAND), flush_op);
 
 	/* 3. Busy-wait irq status to be enabled. */
-	ret = busy_wait_on_irq(kbdev, (u32)CLEAN_CACHES_COMPLETED);
+	ret = busy_wait_cache_operation(kbdev, CLEAN_CACHES_COMPLETED);
 	if (ret)
 		return ret;
 
@@ -279,7 +285,8 @@ void kbase_gpu_wait_cache_clean(struct kbase_device *kbdev)
 int kbase_gpu_wait_cache_clean_timeout(struct kbase_device *kbdev,
 				unsigned int wait_timeout_ms)
 {
-	long remaining = msecs_to_jiffies(wait_timeout_ms);
+	long remaining = (long)msecs_to_jiffies(wait_timeout_ms);
+	int result = 0;
 
 	while (remaining && get_cache_clean_flag(kbdev)) {
 		remaining = wait_event_timeout(kbdev->cache_clean_wait,

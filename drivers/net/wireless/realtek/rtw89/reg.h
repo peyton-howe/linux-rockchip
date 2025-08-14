@@ -266,10 +266,6 @@
 #define R_AX_EECS_EESK_FUNC_SEL 0x02D8
 #define B_AX_PINMUX_EESK_FUNC_SEL_MASK GENMASK(7, 4)
 
-#define R_AX_GPIO16_23_FUNC_SEL 0x02D8
-#define B_AX_PINMUX_GPIO17_FUNC_SEL_MASK GENMASK(7, 4)
-#define B_AX_PINMUX_GPIO16_FUNC_SEL_MASK GENMASK(3, 0)
-
 #define R_AX_LED1_FUNC_SEL 0x02DC
 #define B_AX_PINMUX_EESK_FUNC_SEL_V1_MASK GENMASK(27, 24)
 #define PINMUX_EESK_FUNC_SEL_BT_LOG 0x1
@@ -3651,9 +3647,7 @@
 #define RR_MOD_IQK GENMASK(19, 4)
 #define RR_MOD_DPK GENMASK(19, 5)
 #define RR_MOD_MASK GENMASK(19, 16)
-#define RR_MOD_DCK GENMASK(14, 10)
 #define RR_MOD_RGM GENMASK(13, 4)
-#define RR_MOD_RXB GENMASK(9, 5)
 #define RR_MOD_V_DOWN 0x0
 #define RR_MOD_V_STANDBY 0x1
 #define RR_TXAGC 0x10001
@@ -3808,7 +3802,6 @@
 #define RR_RXA_DPK GENMASK(9, 8)
 #define RR_RXA_LNA 0x8b
 #define RR_RXA2 0x8c
-#define RR_RAA2_SATT GENMASK(15, 13)
 #define RR_RAA2_SWATT GENMASK(15, 9)
 #define RR_RXA2_C1 GENMASK(12, 10)
 #define RR_RXA2_C2 GENMASK(9, 3)
@@ -3858,26 +3851,19 @@
 #define RR_LOGEN 0xa3
 #define RR_LOGEN_RPT GENMASK(19, 16)
 #define RR_SX 0xaf
-#define RR_IBD 0xc9
-#define RR_IBD_VAL GENMASK(4, 0)
 #define RR_LDO 0xb1
 #define RR_LDO_SEL GENMASK(8, 6)
 #define RR_VCO 0xb2
-#define RR_VCO_SEL GENMASK(9, 8)
-#define RR_VCI 0xb3
-#define RR_VCI_ON BIT(7)
 #define RR_LPF 0xb7
 #define RR_LPF_BUSY BIT(8)
 #define RR_XTALX2 0xb8
 #define RR_MALSEL 0xbe
 #define RR_SYNFB 0xc5
 #define RR_SYNFB_LK BIT(15)
-#define RR_AACK 0xca
 #define RR_LCKST 0xcf
 #define RR_LCKST_BIN BIT(0)
 #define RR_LCK_TRG 0xd3
 #define RR_LCK_TRGSEL BIT(8)
-#define RR_LCK_ST BIT(4)
 #define RR_MMD 0xd5
 #define RR_MMD_RST_EN BIT(8)
 #define RR_MMD_RST_SYN BIT(6)
@@ -4935,19 +4921,11 @@
 #define R_P0_CFCH_BW1 0xC0D8
 #define B_P0_CFCH_EX BIT(13)
 #define B_P0_CFCH_BW1 GENMASK(8, 5)
-#define R_WDADC 0xC0E4
-#define B_WDADC_SEL GENMASK(5, 4)
-#define R_ADCMOD 0xC0E8
-#define B_ADCMOD_LP GENMASK(31, 16)
-#define R_DCIM 0xC0EC
-#define B_DCIM_FR GENMASK(14, 13)
 #define R_ADDCK0D 0xC0F0
 #define B_ADDCK0D_VAL2 GENMASK(31, 26)
 #define B_ADDCK0D_VAL GENMASK(25, 16)
-#define B_ADDCK_DS BIT(16)
 #define R_ADDCK0 0xC0F4
 #define B_ADDCK0_TRG BIT(11)
-#define B_ADDCK0_IQ BIT(10)
 #define B_ADDCK0 GENMASK(9, 8)
 #define B_ADDCK0_MAN GENMASK(5, 4)
 #define B_ADDCK0_EN BIT(4)

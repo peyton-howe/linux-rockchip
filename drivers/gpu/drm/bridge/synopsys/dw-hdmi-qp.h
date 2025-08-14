@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (C) Rockchip Electronics Co.Ltd
+ * Copyright (C) Rockchip Electronics Co., Ltd.
  * Author:
  *      Algea Cao <algea.cao@rock-chips.com>
  */
@@ -852,5 +852,9 @@
 #define HDMI_HDCP14_MEM_BSTATUS0			0x5958
 #define HDMI_HDCP14_MEM_M0_1				0x5960
 #define HDMI_HDCP14_MEM_M0_7				0x597c
+
+#define SCDC_CONFIG_1					0x31
+#define SCDC_SOURCE_TEST_CONFIG				0x35
+#define SCDC_STATUS_FLAGS_2				0x42
 
 #endif /* __DW_HDMI_QP_H__ */

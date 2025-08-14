@@ -82,7 +82,7 @@ struct protected_memory_allocation **
 	unsigned int num_pages_order;
 
 	if (is_small_page)
-		order = KBASE_MEM_POOL_4KB_PAGE_TABLE_ORDER;
+		order = KBASE_MEM_POOL_SMALL_PAGE_TABLE_ORDER;
 
 	num_pages_order = (1u << order);
 
@@ -143,7 +143,7 @@ void kbase_csf_protected_memory_free(
 	unsigned int num_pages_order = (1u << KBASE_MEM_POOL_2MB_PAGE_TABLE_ORDER);
 
 	if (is_small_page)
-		num_pages_order = (1u << KBASE_MEM_POOL_4KB_PAGE_TABLE_ORDER);
+		num_pages_order = (1u << KBASE_MEM_POOL_SMALL_PAGE_TABLE_ORDER);
 
 	if (WARN_ON(!pma_dev) || WARN_ON(!pma))
 		return;

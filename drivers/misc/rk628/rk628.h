@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Wyon Bi <bivvy.bi@rock-chips.com>
  */
@@ -18,6 +18,7 @@
 #include <linux/wakelock.h>
 #include <linux/workqueue.h>
 #include <linux/regulator/consumer.h>
+#include <linux/pwm.h>
 
 #define DRIVER_VERSION				"0.1.0"
 #define UPDATE(x, h, l)		(((x) << (l)) & GENMASK((h), (l)))
@@ -147,6 +148,7 @@
 #define GRF_RGB_DEC_CON2		0x0048
 #define GRF_RGB_ENC_CON			0x004c
 #define BT1120_UV_SWAP(x)		HIWORD_UPDATE(x, 5, 5)
+#define BT1120_YC_SWAP(x)		HIWORD_UPDATE(x, 4, 4)
 #define ENC_DUALEDGE_EN(x)		HIWORD_UPDATE(x, 3, 3)
 #define GRF_MIPI_LANE_DELAY_CON0	0x0050
 #define GRF_MIPI_LANE_DELAY_CON1	0x0054
@@ -222,6 +224,11 @@
 #define GRF_OS_REG1			0x0144
 #define GRF_OS_REG2			0x0148
 #define GRF_OS_REG3			0x014c
+#define GRF_PWM_PERIOD			0x0150
+#define GRF_PWM_DUTY			0x0154
+#define GRF_PWM_CTRL			0x0158
+#define GRF_PWM_CH_CNT			0x015c
+#define GRF_PWM_STATUS			0x0160
 #define GRF_RGB_RX_DBG_MEAS0		0x0170
 #define RGB_RX_EVAL_TIME_MASK		GENMASK(27, 16)
 #define RGB_RX_MODET_EN			BIT(1)
@@ -546,6 +553,15 @@ struct rk628_rgb {
 	bool bt1120_uv_swap;
 };
 
+struct rk628_pwm {
+	struct pwm_chip chip;
+	unsigned long clk_rate;
+	bool center_aligned;
+	bool oneshot_en;
+	bool is_output_m1;
+	int irq;
+};
+
 struct rk628 {
 	struct device *dev;
 	struct i2c_client *client;
@@ -571,17 +587,22 @@ struct rk628 {
 	struct rk628_display_mode dst_mode;
 	enum bus_format input_fmt;
 	enum bus_format output_fmt;
+	u32 csc_mode;
 	struct rk628_dsi dsi0;
 	struct rk628_dsi dsi1;
 	struct rk628_lvds lvds;
 	struct rk628_gvi gvi;
 	struct rk628_combtxphy combtxphy;
+	struct rk628_pwm pwm;
 	int sync_pol;
 	void *csi;
 	struct notifier_block fb_nb;
 	u32 version;
 	struct rk628_rgb rgb;
 	int old_blank;
+	struct workqueue_struct *pwm_wq;
+	struct delayed_work pwm_delay_work;
+	bool pwm_bl_en;
 };
 
 static inline bool rk628_input_is_hdmi(struct rk628 *rk628)

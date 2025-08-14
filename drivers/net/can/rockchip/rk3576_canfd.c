@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2023 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2023 Rockchip Electronics Co., Ltd.
  * Rk3576 CANFD driver
  */
 
@@ -830,7 +830,7 @@ static int rk3576_canfd_rx_poll(struct napi_struct *napi, int quota)
 		while (work_done < rcan->quota)
 			work_done += rk3576_canfd_rx(ndev, work_done);
 
-		if (work_done < rcan->rx_fifo_depth) {
+		if (work_done <= rcan->rx_fifo_depth) {
 			napi_complete_done(napi, work_done);
 			rk3576_canfd_write(rcan, CANFD_INT_MASK, INT_ENABLE);
 		}
@@ -846,7 +846,7 @@ static int rk3576_canfd_rx_poll(struct napi_struct *napi, int quota)
 		while (work_done < quota)
 			work_done += rk3576_canfd_rx(ndev, CANFD_RXFRD);
 
-		if (work_done < rcan->rx_fifo_depth) {
+		if (work_done <= rcan->rx_fifo_depth) {
 			napi_complete_done(napi, work_done);
 			rk3576_canfd_write(rcan, CANFD_INT_MASK, INT_ENABLE);
 		}

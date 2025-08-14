@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2020-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -26,6 +26,14 @@
 #include <device/mali_kbase_device.h>
 #include <mali_kbase_reset_gpu.h>
 #include <mmu/mali_kbase_mmu.h>
+
+bool kbase_is_gpu_removed(struct kbase_device *kbdev)
+{
+	if (!kbase_has_arbiter(kbdev))
+		return false;
+
+	return (KBASE_REG_READ(kbdev, GPU_CONTROL_ENUM(GPU_ID)) == 0);
+}
 
 /**
  * kbase_report_gpu_fault - Report a GPU fault.
@@ -99,45 +107,10 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 		 * cores.
 		 */
 		if (kbdev->pm.backend.l2_always_on ||
-			kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_TTRX_921))
+		    kbase_hw_has_issue(kbdev, KBASE_HW_ISSUE_TTRX_921))
 			kbase_pm_power_changed(kbdev);
 	}
 
 	KBASE_KTRACE_ADD(kbdev, CORE_GPU_IRQ_DONE, NULL, val);
 }
-
-#if IS_ENABLED(CONFIG_MALI_REAL_HW)
-void kbase_reg_write(struct kbase_device *kbdev, u32 offset, u32 value)
-{
-	WARN_ON(!kbdev->pm.backend.gpu_powered);
-
-	writel(value, kbdev->reg + offset);
-
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (unlikely(kbdev->io_history.enabled))
-		kbase_io_history_add(&kbdev->io_history, kbdev->reg + offset,
-				     value, 1);
-#endif /* CONFIG_DEBUG_FS */
-	dev_dbg(kbdev->dev, "w: reg %08x val %08x", offset, value);
-}
-KBASE_EXPORT_TEST_API(kbase_reg_write);
-
-u32 kbase_reg_read(struct kbase_device *kbdev, u32 offset)
-{
-	u32 val;
-
-	WARN_ON(!kbdev->pm.backend.gpu_powered);
-
-	val = readl(kbdev->reg + offset);
-
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (unlikely(kbdev->io_history.enabled))
-		kbase_io_history_add(&kbdev->io_history, kbdev->reg + offset,
-				     val, 0);
-#endif /* CONFIG_DEBUG_FS */
-	dev_dbg(kbdev->dev, "r: reg %08x val %08x", offset, val);
-
-	return val;
-}
-KBASE_EXPORT_TEST_API(kbase_reg_read);
-#endif /* IS_ENABLED(CONFIG_MALI_REAL_HW) */
+KBASE_EXPORT_TEST_API(kbase_gpu_interrupt);

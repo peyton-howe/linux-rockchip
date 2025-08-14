@@ -143,7 +143,7 @@ static ssize_t kbasep_csf_firmware_log_debugfs_read(struct file *file, char __us
 	}
 
 	*ppos += n_read;
-	ret = n_read;
+	ret = (int)n_read;
 
 out:
 	atomic_set(&fw_log->busy, 0);
@@ -176,8 +176,10 @@ static int kbase_csf_firmware_log_mode_write(void *data, u64 val)
 		cancel_delayed_work_sync(&fw_log->poll_work);
 		break;
 	case KBASE_CSF_FIRMWARE_LOG_MODE_AUTO_PRINT:
-		schedule_delayed_work(&fw_log->poll_work,
-				      msecs_to_jiffies(KBASE_CSF_FIRMWARE_LOG_POLL_PERIOD_MS));
+	case KBASE_CSF_FIRMWARE_LOG_MODE_AUTO_DISCARD:
+		schedule_delayed_work(
+			&fw_log->poll_work,
+			msecs_to_jiffies((unsigned int)atomic_read(&fw_log->poll_period_ms)));
 		break;
 	default:
 		ret = -EINVAL;
@@ -189,6 +191,24 @@ static int kbase_csf_firmware_log_mode_write(void *data, u64 val)
 out:
 	atomic_set(&fw_log->busy, 0);
 	return ret;
+}
+
+static int kbase_csf_firmware_log_poll_period_read(void *data, u64 *val)
+{
+	struct kbase_device *kbdev = (struct kbase_device *)data;
+	struct kbase_csf_firmware_log *fw_log = &kbdev->csf.fw_log;
+
+	*val = (u64)atomic_read(&fw_log->poll_period_ms);
+	return 0;
+}
+
+static int kbase_csf_firmware_log_poll_period_write(void *data, u64 val)
+{
+	struct kbase_device *kbdev = (struct kbase_device *)data;
+	struct kbase_csf_firmware_log *fw_log = &kbdev->csf.fw_log;
+
+	atomic_set(&fw_log->poll_period_ms, val);
+	return 0;
 }
 
 DEFINE_DEBUGFS_ATTRIBUTE(kbase_csf_firmware_log_enable_mask_fops,
@@ -214,9 +234,7 @@ static void kbase_csf_firmware_log_poll(struct work_struct *work)
 	struct kbase_csf_firmware_log *fw_log = &kbdev->csf.fw_log;
 
 	schedule_delayed_work(&fw_log->poll_work,
-			      msecs_to_jiffies(KBASE_CSF_FIRMWARE_LOG_POLL_PERIOD_MS));
-
-	kbase_csf_firmware_log_dump_buffer(kbdev);
+			      msecs_to_jiffies((unsigned int)atomic_read(&fw_log->poll_period_ms)));
 }
 
 int kbase_csf_firmware_log_init(struct kbase_device *kbdev)
@@ -286,7 +304,7 @@ void kbase_csf_firmware_log_dump_buffer(struct kbase_device *kbdev)
 		pend = p + read_size;
 		p = buf;
 
-		while (p < pend && (pnewline = memchr(p, '\n', pend - p))) {
+		while (p < pend && (pnewline = memchr(p, '\n', (size_t)(pend - p)))) {
 			/* Null-terminate the string */
 			*pnewline = 0;
 

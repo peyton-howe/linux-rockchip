@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (C) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Shunqing Chen <csq@rock-chips.com>
  */
@@ -301,6 +301,9 @@ u32 rk628_dsi_get_lane_rate_mbps(struct rk628_dsi *dsi)
 		lane_rate = 1300;
 	else
 		lane_rate = 700;
+
+	if (dsi->timings.bt.width == 4096 && lane_rate > 1300)
+		lane_rate = 1850;
 
 	return lane_rate;
 }

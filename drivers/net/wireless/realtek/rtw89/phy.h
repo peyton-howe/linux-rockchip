@@ -66,14 +66,6 @@
 #define UL_TB_TF_CNT_L2H_TH 100
 #define UL_TB_TF_CNT_H2L_TH 70
 
-#define ANTDIV_TRAINNING_CNT 2
-#define ANTDIV_TRAINNING_INTVL 30
-#define ANTDIV_DELAY 110
-#define ANTDIV_TP_DIFF_TH_HIGH 100
-#define ANTDIV_TP_DIFF_TH_LOW 5
-#define ANTDIV_EVM_DIFF_TH 8
-#define ANTDIV_RSSI_DIFF_TH 3
-
 #define CCX_MAX_PERIOD 2097
 #define CCX_MAX_PERIOD_UNIT 32
 #define MS_TO_4US_RATIO 250
@@ -336,79 +328,6 @@ struct rtw89_nbi_reg_def {
 	struct rtw89_reg_def notch2_en;
 };
 
-struct rtw89_ccx_regs {
-	u32 setting_addr;
-	u32 edcca_opt_mask;
-	u32 measurement_trig_mask;
-	u32 trig_opt_mask;
-	u32 en_mask;
-	u32 ifs_cnt_addr;
-	u32 ifs_clm_period_mask;
-	u32 ifs_clm_cnt_unit_mask;
-	u32 ifs_clm_cnt_clear_mask;
-	u32 ifs_collect_en_mask;
-	u32 ifs_t1_addr;
-	u32 ifs_t1_th_h_mask;
-	u32 ifs_t1_en_mask;
-	u32 ifs_t1_th_l_mask;
-	u32 ifs_t2_addr;
-	u32 ifs_t2_th_h_mask;
-	u32 ifs_t2_en_mask;
-	u32 ifs_t2_th_l_mask;
-	u32 ifs_t3_addr;
-	u32 ifs_t3_th_h_mask;
-	u32 ifs_t3_en_mask;
-	u32 ifs_t3_th_l_mask;
-	u32 ifs_t4_addr;
-	u32 ifs_t4_th_h_mask;
-	u32 ifs_t4_en_mask;
-	u32 ifs_t4_th_l_mask;
-	u32 ifs_clm_tx_cnt_addr;
-	u32 ifs_clm_edcca_excl_cca_fa_mask;
-	u32 ifs_clm_tx_cnt_msk;
-	u32 ifs_clm_cca_addr;
-	u32 ifs_clm_ofdmcca_excl_fa_mask;
-	u32 ifs_clm_cckcca_excl_fa_mask;
-	u32 ifs_clm_fa_addr;
-	u32 ifs_clm_ofdm_fa_mask;
-	u32 ifs_clm_cck_fa_mask;
-	u32 ifs_his_addr;
-	u32 ifs_t4_his_mask;
-	u32 ifs_t3_his_mask;
-	u32 ifs_t2_his_mask;
-	u32 ifs_t1_his_mask;
-	u32 ifs_avg_l_addr;
-	u32 ifs_t2_avg_mask;
-	u32 ifs_t1_avg_mask;
-	u32 ifs_avg_h_addr;
-	u32 ifs_t4_avg_mask;
-	u32 ifs_t3_avg_mask;
-	u32 ifs_cca_l_addr;
-	u32 ifs_t2_cca_mask;
-	u32 ifs_t1_cca_mask;
-	u32 ifs_cca_h_addr;
-	u32 ifs_t4_cca_mask;
-	u32 ifs_t3_cca_mask;
-	u32 ifs_total_addr;
-	u32 ifs_cnt_done_mask;
-	u32 ifs_total_mask;
-};
-
-struct rtw89_physts_regs {
-	u32 setting_addr;
-	u32 dis_trigger_fail_mask;
-	u32 dis_trigger_brk_mask;
-};
-
-struct rtw89_phy_gen_def {
-	u32 cr_base;
-	const struct rtw89_ccx_regs *ccx;
-	const struct rtw89_physts_regs *physts;
-};
-
-extern const struct rtw89_phy_gen_def rtw89_phy_gen_ax;
-extern const struct rtw89_phy_gen_def rtw89_phy_gen_be;
-
 static inline void rtw89_phy_write8(struct rtw89_dev *rtwdev,
 				    u32 addr, u8 data)
 {
@@ -484,6 +403,50 @@ static inline u32 rtw89_phy_read32_mask(struct rtw89_dev *rtwdev,
 	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
 
 	return rtw89_read32_mask(rtwdev, addr + phy->cr_base, mask);
+}
+
+static inline
+enum rtw89_gain_offset rtw89_subband_to_gain_offset_band_of_ofdm(enum rtw89_subband subband)
+{
+	switch (subband) {
+	default:
+	case RTW89_CH_2G:
+		return RTW89_GAIN_OFFSET_2G_OFDM;
+	case RTW89_CH_5G_BAND_1:
+		return RTW89_GAIN_OFFSET_5G_LOW;
+	case RTW89_CH_5G_BAND_3:
+		return RTW89_GAIN_OFFSET_5G_MID;
+	case RTW89_CH_5G_BAND_4:
+		return RTW89_GAIN_OFFSET_5G_HIGH;
+	}
+}
+
+static inline
+enum rtw89_phy_bb_gain_band rtw89_subband_to_bb_gain_band(enum rtw89_subband subband)
+{
+	switch (subband) {
+	default:
+	case RTW89_CH_2G:
+		return RTW89_BB_GAIN_BAND_2G;
+	case RTW89_CH_5G_BAND_1:
+		return RTW89_BB_GAIN_BAND_5G_L;
+	case RTW89_CH_5G_BAND_3:
+		return RTW89_BB_GAIN_BAND_5G_M;
+	case RTW89_CH_5G_BAND_4:
+		return RTW89_BB_GAIN_BAND_5G_H;
+	case RTW89_CH_6G_BAND_IDX0:
+	case RTW89_CH_6G_BAND_IDX1:
+		return RTW89_BB_GAIN_BAND_6G_L;
+	case RTW89_CH_6G_BAND_IDX2:
+	case RTW89_CH_6G_BAND_IDX3:
+		return RTW89_BB_GAIN_BAND_6G_M;
+	case RTW89_CH_6G_BAND_IDX4:
+	case RTW89_CH_6G_BAND_IDX5:
+		return RTW89_BB_GAIN_BAND_6G_H;
+	case RTW89_CH_6G_BAND_IDX6:
+	case RTW89_CH_6G_BAND_IDX7:
+		return RTW89_BB_GAIN_BAND_6G_UH;
+	}
 }
 
 static inline
@@ -659,9 +622,5 @@ void rtw89_phy_tssi_ctrl_set_bandedge_cfg(struct rtw89_dev *rtwdev,
 					  enum rtw89_tssi_bandedge_cfg bandedge_cfg);
 void rtw89_phy_ul_tb_assoc(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
 void rtw89_phy_ul_tb_ctrl_track(struct rtw89_dev *rtwdev);
-u8 rtw89_encode_chan_idx(struct rtw89_dev *rtwdev, u8 central_ch, u8 band);
-void rtw89_decode_chan_idx(struct rtw89_dev *rtwdev, u8 chan_idx,
-			   u8 *ch, enum nl80211_band *band);
-void rtw89_phy_config_edcca(struct rtw89_dev *rtwdev, bool scan);
 
 #endif

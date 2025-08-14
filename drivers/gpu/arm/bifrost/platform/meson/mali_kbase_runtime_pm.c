@@ -50,8 +50,7 @@ static int resets_init(struct kbase_device *kbdev)
 		return nr_resets;
 	}
 
-	resets = devm_kcalloc(kbdev->dev, nr_resets, sizeof(*resets),
-			GFP_KERNEL);
+	resets = devm_kcalloc(kbdev->dev, (size_t)nr_resets, sizeof(*resets), GFP_KERNEL);
 	if (!resets)
 		return -ENOMEM;
 

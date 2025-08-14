@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2021-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2021-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -145,7 +145,7 @@ int kbase_pbha_record_settings(struct kbase_device *kbdev, bool runtime,
 		u32 modified_reg;
 
 		if (runtime) {
-			int i;
+			uint i;
 
 			kbase_pm_context_active(kbdev);
 			/* Ensure host copy of SYSC_ALLOC is up to date */
@@ -201,12 +201,33 @@ int kbase_pbha_record_settings(struct kbase_device *kbdev, bool runtime,
 void kbase_pbha_write_settings(struct kbase_device *kbdev)
 {
 	if (kbasep_pbha_supported(kbdev)) {
-		int i;
+		uint i;
 
 		for (i = 0; i < SYSC_ALLOC_COUNT; ++i)
 			kbase_reg_write(kbdev, GPU_CONTROL_REG(SYSC_ALLOC(i)),
 					kbdev->sysc_alloc[i]);
 	}
+
+	if (kbdev->mma_wa_id) {
+		/* PBHA OVERRIDE register index (0-3) */
+		uint reg_index = kbdev->mma_wa_id >> 2;
+		/* PBHA index within a PBHA OVERRIDE register (0-3) */
+		uint pbha_index = kbdev->mma_wa_id & 0x3;
+		/* 4 bits of read attributes + 4 bits of write attributes for each PBHA */
+		uint pbha_shift = pbha_index * 8;
+		/* Noncacheable read = noncacheable write = b0001*/
+		uint pbha_override_rw_noncacheable = 0x01 | 0x10;
+
+		u32 pbha_override_val =
+			kbase_reg_read32(kbdev, GPU_SYSC_PBHA_OVERRIDE_OFFSET(reg_index));
+		pbha_override_val &= ~((u32)0xFF << pbha_shift);
+		pbha_override_val |= ((u32)pbha_override_rw_noncacheable << pbha_shift);
+		kbase_reg_write32(kbdev, GPU_SYSC_PBHA_OVERRIDE_OFFSET(reg_index),
+				  pbha_override_val);
+	}
+#else
+	CSTD_UNUSED(kbdev);
+#endif /* MALI_USE_CSF */
 }
 
 static int kbase_pbha_read_int_id_override_property(struct kbase_device *kbdev,
@@ -222,11 +243,13 @@ static int kbase_pbha_read_int_id_override_property(struct kbase_device *kbdev,
 		dev_err(kbdev->dev, "Bad DTB format: pbha.int_id_override\n");
 		return -EINVAL;
 	}
-	if (of_property_read_u32_array(pbha_node, "int_id_override", dtb_data,
-				       sz) != 0) {
-		dev_err(kbdev->dev,
-			"Failed to read DTB pbha.int_id_override\n");
-		return -EINVAL;
+	if (of_property_read_u32_array(pbha_node, "int-id-override", dtb_data, (size_t)sz) != 0) {
+		/* There may be no int-id-override field. Fallback to int_id_override instead */
+		if (of_property_read_u32_array(pbha_node, "int_id_override", dtb_data,
+					       (size_t)sz) != 0) {
+			dev_err(kbdev->dev, "Failed to read DTB pbha.int_id_override\n");
+			return -EINVAL;
+		}
 	}
 
 	for (i = 0; valid && i < sz; i = i + DTB_SET_SIZE) {
@@ -254,13 +277,17 @@ static int kbase_pbha_read_int_id_override_property(struct kbase_device *kbdev,
 static int kbase_pbha_read_propagate_bits_property(struct kbase_device *kbdev,
 						   const struct device_node *pbha_node)
 {
-	u32 bits;
+	u8 bits = 0;
 	int err;
 
-	if (!kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_PBHA_HWU))
+	if (!kbase_hw_has_feature(kbdev, KBASE_HW_FEATURE_PBHA_HWU))
 		return 0;
 
-	err = of_property_read_u32(pbha_node, "propagate_bits", &bits);
+	err = of_property_read_u8(pbha_node, "propagate-bits", &bits);
+
+	if (err == -EINVAL) {
+		err = of_property_read_u8(pbha_node, "propagate_bits", &bits);
+	}
 
 	if (err < 0) {
 		if (err != -EINVAL) {
@@ -279,7 +306,44 @@ static int kbase_pbha_read_propagate_bits_property(struct kbase_device *kbdev,
 	kbdev->pbha_propagate_bits = bits;
 	return 0;
 }
-#endif
+
+static int kbase_pbha_read_mma_wa_id_property(struct kbase_device *kbdev,
+					      const struct device_node *pbha_node)
+{
+	u32 mma_wa_id = 0;
+	int err;
+
+	/* Skip if kbdev->mma_wa_id has already been set via the module parameter */
+	if ((kbdev->gpu_props.gpu_id.arch_id < GPU_ID_ARCH_MAKE(14, 8, 0)) || kbdev->mma_wa_id != 0)
+		return 0;
+
+	err = of_property_read_u32(pbha_node, "mma-wa-id", &mma_wa_id);
+
+	/* Property does not exist. This is not a mandatory property, ignore this error */
+	if (err == -EINVAL)
+		return 0;
+
+	if (err == -ENODATA) {
+		dev_err(kbdev->dev, "DTB property mma-wa-id has no value\n");
+		return err;
+	}
+
+	if (err == -EOVERFLOW) {
+		dev_err(kbdev->dev, "DTB value for mma-wa-id is out of range\n");
+		return err;
+	}
+
+	if (mma_wa_id == 0 || mma_wa_id > 15) {
+		dev_err(kbdev->dev,
+			"Invalid DTB value for mma-wa-id: %u. Valid range is between 1 and 15.\n",
+			mma_wa_id);
+		return -EINVAL;
+	}
+
+	kbdev->mma_wa_id = mma_wa_id;
+	return 0;
+}
+#endif /* MALI_USE_CSF */
 
 int kbase_pbha_read_dtb(struct kbase_device *kbdev)
 {
@@ -300,6 +364,15 @@ int kbase_pbha_read_dtb(struct kbase_device *kbdev)
 		return err;
 
 	err = kbase_pbha_read_propagate_bits_property(kbdev, pbha_node);
+
+	if (err < 0)
+		return err;
+
+	err = kbase_pbha_read_mma_wa_id_property(kbdev, pbha_node);
+
+	return err;
+#else
+	return 0;
 #endif
 
 	return err;

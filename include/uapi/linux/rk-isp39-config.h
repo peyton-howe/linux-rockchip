@@ -11,6 +11,9 @@
 #include <linux/v4l2-controls.h>
 #include <linux/rk-isp32-config.h>
 
+#define RKISP_CMD_GET_PARAMS_V39 \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 115, struct isp39_isp_params_cfg)
+
 #define ISP39_MODULE_DPCC		ISP3X_MODULE_DPCC
 #define ISP39_MODULE_BLS		ISP3X_MODULE_BLS
 #define ISP39_MODULE_SDG		ISP3X_MODULE_SDG
@@ -1659,6 +1662,7 @@ struct isp39_isp_params_cfg {
 	__u32 frame_id;
 	struct isp39_isp_meas_cfg meas;
 	struct isp39_isp_other_cfg others;
+	struct sensor_exposure_cfg exposure;
 } __attribute__ ((packed));
 
 struct isp39_dhaz_stat {

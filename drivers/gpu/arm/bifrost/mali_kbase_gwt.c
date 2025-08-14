@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2010-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -19,15 +19,21 @@
  *
  */
 
-#include "mali_kbase_gwt.h"
-#include <linux/list_sort.h>
+#include <mali_kbase_gwt.h>
+#include <mmu/mali_kbase_mmu.h>
+#include <mali_kbase.h>
+#include <mali_kbase_defs.h>
+#include <mali_malisw.h>
 
-static inline void kbase_gpu_gwt_setup_page_permission(
-				struct kbase_context *kctx,
-				unsigned long flag,
-				struct rb_node *node)
+#include <linux/rbtree.h>
+#include <linux/list_sort.h>
+#include <linux/module.h>
+
+static inline void kbase_gpu_gwt_setup_page_permission(struct kbase_context *kctx,
+						       unsigned long flag,
+						       struct kbase_reg_zone *zone)
 {
-	struct rb_node *rbnode = node;
+	struct rb_node *rbnode = rb_first(&zone->reg_rbtree);
 
 	while (rbnode) {
 		struct kbase_va_region *reg;
@@ -52,18 +58,16 @@ static inline void kbase_gpu_gwt_setup_page_permission(
 static void kbase_gpu_gwt_setup_pages(struct kbase_context *kctx,
 					unsigned long flag)
 {
-	kbase_gpu_gwt_setup_page_permission(kctx, flag,
-				rb_first(&(kctx->reg_rbtree_same)));
-	kbase_gpu_gwt_setup_page_permission(kctx, flag,
-				rb_first(&(kctx->reg_rbtree_custom)));
+	kbase_gpu_gwt_setup_page_permission(kctx, flag, &kctx->reg_zone[SAME_VA_ZONE]);
+	kbase_gpu_gwt_setup_page_permission(kctx, flag, &kctx->reg_zone[CUSTOM_VA_ZONE]);
 }
 
 
 int kbase_gpu_gwt_start(struct kbase_context *kctx)
 {
-	kbase_gpu_vm_lock(kctx);
+	kbase_gpu_vm_lock_with_pmode_sync(kctx);
 	if (kctx->gwt_enabled) {
-		kbase_gpu_vm_unlock(kctx);
+		kbase_gpu_vm_unlock_with_pmode_sync(kctx);
 		return -EBUSY;
 	}
 
@@ -90,7 +94,7 @@ int kbase_gpu_gwt_start(struct kbase_context *kctx)
 
 	kbase_gpu_gwt_setup_pages(kctx, ~KBASE_REG_GPU_WR);
 
-	kbase_gpu_vm_unlock(kctx);
+	kbase_gpu_vm_unlock_with_pmode_sync(kctx);
 	return 0;
 }
 
@@ -184,6 +188,10 @@ int kbase_gpu_gwt_dump(struct kbase_context *kctx,
 	__user void *user_sizes = (__user void *)
 			(uintptr_t)gwt_dump->in.size_buffer;
 
+	/* We don't have any valid user space buffer to copy the write modified addresses. */
+	if (!gwt_dump->in.len || !gwt_dump->in.addr_buffer || !gwt_dump->in.size_buffer)
+		return -EINVAL;
+
 	kbase_gpu_vm_lock(kctx);
 
 	if (!kctx->gwt_enabled) {
@@ -192,20 +200,8 @@ int kbase_gpu_gwt_dump(struct kbase_context *kctx,
 		return -EPERM;
 	}
 
-	if (!gwt_dump->in.len || !gwt_dump->in.addr_buffer
-			|| !gwt_dump->in.size_buffer) {
-		kbase_gpu_vm_unlock(kctx);
-		/* We don't have any valid user space buffer to copy the
-		 * write modified addresses.
-		 */
-		return -EINVAL;
-	}
-
-	if (list_empty(&kctx->gwt_snapshot_list) &&
-			!list_empty(&kctx->gwt_current_list)) {
-
-		list_replace_init(&kctx->gwt_current_list,
-					&kctx->gwt_snapshot_list);
+	if (list_empty(&kctx->gwt_snapshot_list) && !list_empty(&kctx->gwt_current_list)) {
+		list_replace_init(&kctx->gwt_current_list, &kctx->gwt_snapshot_list);
 
 		/* We have collected all write faults so far
 		 * and they will be passed on to user space.
@@ -238,19 +234,15 @@ int kbase_gpu_gwt_dump(struct kbase_context *kctx,
 		}
 
 		if (count) {
-			err = copy_to_user((user_addr +
-					(ubuf_count * sizeof(u64))),
-					(void *)addr_buffer,
-					count * sizeof(u64));
+			err = copy_to_user((user_addr + (ubuf_count * sizeof(u64))),
+					   (void *)addr_buffer, size_mul(count, sizeof(u64)));
 			if (err) {
 				dev_err(kctx->kbdev->dev, "Copy to user failure\n");
 				kbase_gpu_vm_unlock(kctx);
 				return err;
 			}
-			err = copy_to_user((user_sizes +
-					(ubuf_count * sizeof(u64))),
-					(void *)num_page_buffer,
-					count * sizeof(u64));
+			err = copy_to_user((user_sizes + (ubuf_count * sizeof(u64))),
+					   (void *)num_page_buffer, size_mul(count, sizeof(u64)));
 			if (err) {
 				dev_err(kctx->kbdev->dev, "Copy to user failure\n");
 				kbase_gpu_vm_unlock(kctx);

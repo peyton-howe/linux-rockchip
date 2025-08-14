@@ -523,6 +523,38 @@ struct rtw89_fw_hdr_v1 {
 #define FW_HDR_V1_W6_SEC_NUM GENMASK(15, 8)
 #define FW_HDR_V1_W7_DYN_HDR BIT(16)
 
+#define GET_FW_HDR_MAJOR_VERSION(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 1), GENMASK(7, 0))
+#define GET_FW_HDR_MINOR_VERSION(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 1), GENMASK(15, 8))
+#define GET_FW_HDR_SUBVERSION(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 1), GENMASK(23, 16))
+#define GET_FW_HDR_SUBINDEX(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 1), GENMASK(31, 24))
+#define GET_FW_HDR_LEN(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 3), GENMASK(23, 16))
+#define GET_FW_HDR_MONTH(fwhdr)		\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 4), GENMASK(7, 0))
+#define GET_FW_HDR_DATE(fwhdr)		\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 4), GENMASK(15, 8))
+#define GET_FW_HDR_HOUR(fwhdr)		\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 4), GENMASK(23, 16))
+#define GET_FW_HDR_MIN(fwhdr)		\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 4), GENMASK(31, 24))
+#define GET_FW_HDR_YEAR(fwhdr)		\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 5), GENMASK(31, 0))
+#define GET_FW_HDR_SEC_NUM(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 6), GENMASK(15, 8))
+#define GET_FW_HDR_DYN_HDR(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 7), BIT(16))
+#define GET_FW_HDR_CMD_VERSERION(fwhdr)	\
+	le32_get_bits(*((const __le32 *)(fwhdr) + 7), GENMASK(31, 24))
+
+#define GET_FW_DYNHDR_LEN(fwdynhdr)	\
+	le32_get_bits(*((const __le32 *)(fwdynhdr)), GENMASK(31, 0))
+#define GET_FW_DYNHDR_COUNT(fwdynhdr)	\
+	le32_get_bits(*((const __le32 *)(fwdynhdr) + 1), GENMASK(31, 0))
+
 static inline void SET_FW_HDR_PART_SIZE(void *fwhdr, u32 val)
 {
 	le32p_replace_bits((__le32 *)fwhdr + 7, val, GENMASK(15, 0));
@@ -3156,10 +3188,22 @@ struct rtw89_c2h_hdr {
 	__le32 w1;
 } __packed;
 
-#define RTW89_C2H_HDR_W0_CATEGORY GENMASK(1, 0)
-#define RTW89_C2H_HDR_W0_CLASS GENMASK(7, 2)
-#define RTW89_C2H_HDR_W0_FUNC GENMASK(15, 8)
-#define RTW89_C2H_HDR_W1_LEN GENMASK(13, 0)
+struct rtw89_fw_c2h_attr {
+	u8 category;
+	u8 class;
+	u8 func;
+	u16 len;
+};
+
+static inline struct rtw89_fw_c2h_attr *RTW89_SKB_C2H_CB(struct sk_buff *skb)
+{
+	static_assert(sizeof(skb->cb) >= sizeof(struct rtw89_fw_c2h_attr));
+
+	return (struct rtw89_fw_c2h_attr *)skb->cb;
+}
+
+#define RTW89_GET_C2H_LOG_SRT_PRT(c2h) (char *)((__le32 *)(c2h) + 2)
+#define RTW89_GET_C2H_LOG_LEN(len) ((len) - RTW89_C2H_HEADER_LEN)
 
 struct rtw89_fw_c2h_attr {
 	u8 category;
@@ -3328,45 +3372,8 @@ static_assert(sizeof(struct rtw89_mac_mcc_tsf_rpt) <= RTW89_COMPLETION_BUF_SIZE)
 #define RTW89_GET_MAC_C2H_MCC_STATUS_RPT_TSF_HIGH(c2h) \
 	le32_get_bits(*((const __le32 *)(c2h) + 4), GENMASK(31, 0))
 
-struct rtw89_c2h_pkt_ofld_rsp {
-	__le32 w0;
-	__le32 w1;
-	__le32 w2;
-} __packed;
-
-#define RTW89_C2H_PKT_OFLD_RSP_W2_PTK_ID GENMASK(7, 0)
-#define RTW89_C2H_PKT_OFLD_RSP_W2_PTK_OP GENMASK(10, 8)
-#define RTW89_C2H_PKT_OFLD_RSP_W2_PTK_LEN GENMASK(31, 16)
-
-struct rtw89_h2c_bcnfltr {
-	__le32 w0;
-} __packed;
-
-#define RTW89_H2C_BCNFLTR_W0_MON_RSSI BIT(0)
-#define RTW89_H2C_BCNFLTR_W0_MON_BCN BIT(1)
-#define RTW89_H2C_BCNFLTR_W0_MON_EN BIT(2)
-#define RTW89_H2C_BCNFLTR_W0_MODE GENMASK(4, 3)
-#define RTW89_H2C_BCNFLTR_W0_BCN_LOSS_CNT GENMASK(11, 8)
-#define RTW89_H2C_BCNFLTR_W0_RSSI_HYST GENMASK(15, 12)
-#define RTW89_H2C_BCNFLTR_W0_RSSI_THRESHOLD GENMASK(23, 16)
-#define RTW89_H2C_BCNFLTR_W0_MAC_ID GENMASK(31, 24)
-
-struct rtw89_h2c_ofld_rssi {
-	__le32 w0;
-	__le32 w1;
-} __packed;
-
-#define RTW89_H2C_OFLD_RSSI_W0_MACID GENMASK(7, 0)
-#define RTW89_H2C_OFLD_RSSI_W0_NUM GENMASK(15, 8)
-#define RTW89_H2C_OFLD_RSSI_W1_VAL GENMASK(7, 0)
-
-struct rtw89_h2c_ofld {
-	__le32 w0;
-} __packed;
-
-#define RTW89_H2C_OFLD_W0_MAC_ID GENMASK(7, 0)
-#define RTW89_H2C_OFLD_W0_TX_TP GENMASK(17, 8)
-#define RTW89_H2C_OFLD_W0_RX_TP GENMASK(27, 18)
+#define RTW89_FW_HDR_SIZE 32
+#define RTW89_FW_SECTION_HDR_SIZE 16
 
 #define RTW89_MFW_SIG	0xFF
 
@@ -3446,7 +3453,7 @@ struct fwcmd_hdr {
 
 union rtw89_compat_fw_hdr {
 	struct rtw89_mfw_hdr mfw_hdr;
-	struct rtw89_fw_hdr fw_hdr;
+	u8 fw_hdr[RTW89_FW_HDR_SIZE];
 };
 
 static inline u32 rtw89_compat_fw_hdr_ver_code(const void *fw_buf)
@@ -3457,15 +3464,6 @@ static inline u32 rtw89_compat_fw_hdr_ver_code(const void *fw_buf)
 		return RTW89_MFW_HDR_VER_CODE(&compat->mfw_hdr);
 	else
 		return RTW89_FW_HDR_VER_CODE(&compat->fw_hdr);
-}
-
-static inline void rtw89_fw_get_filename(char *buf, size_t size,
-					 const char *fw_basename, int fw_format)
-{
-	if (fw_format <= 0)
-		snprintf(buf, size, "%s.bin", fw_basename);
-	else
-		snprintf(buf, size, "%s-%d.bin", fw_basename, fw_format);
 }
 
 #define RTW89_H2C_RF_PAGE_SIZE 500
@@ -3620,12 +3618,10 @@ struct rtw89_fw_h2c_rf_get_mccch {
 
 int rtw89_fw_check_rdy(struct rtw89_dev *rtwdev);
 int rtw89_fw_recognize(struct rtw89_dev *rtwdev);
-int rtw89_fw_recognize_elements(struct rtw89_dev *rtwdev);
 const struct firmware *
 rtw89_early_fw_feature_recognize(struct device *device,
 				 const struct rtw89_chip_info *chip,
-				 struct rtw89_fw_info *early_fw,
-				 int *used_fw_format);
+				 u32 *early_feat_map);
 int rtw89_fw_download(struct rtw89_dev *rtwdev, enum rtw89_fw_type type);
 void rtw89_load_firmware_work(struct work_struct *work);
 void rtw89_unload_firmware(struct rtw89_dev *rtwdev);

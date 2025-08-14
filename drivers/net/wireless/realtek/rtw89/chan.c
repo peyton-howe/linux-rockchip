@@ -4,8 +4,6 @@
 
 #include "chan.h"
 #include "debug.h"
-#include "fw.h"
-#include "ps.h"
 #include "util.h"
 
 static enum rtw89_subband rtw89_get_subband_type(enum rtw89_band band,
@@ -352,7 +350,6 @@ void rtw89_chanctx_ops_remove(struct rtw89_dev *rtwdev,
 {
 	struct rtw89_hal *hal = &rtwdev->hal;
 	struct rtw89_chanctx_cfg *cfg = (struct rtw89_chanctx_cfg *)ctx->drv_priv;
-	enum rtw89_entity_mode mode;
 	struct rtw89_vif *rtwvif;
 	u8 drop, roll;
 
@@ -377,20 +374,9 @@ void rtw89_chanctx_ops_remove(struct rtw89_dev *rtwdev,
 			rtwvif->sub_entity_idx = RTW89_SUB_ENTITY_0;
 	}
 
-	atomic_cmpxchg(&hal->roc_entity_idx, roll, RTW89_SUB_ENTITY_0);
-
 	drop = roll;
 
 out:
-	mode = rtw89_get_entity_mode(rtwdev);
-	switch (mode) {
-	case RTW89_ENTITY_MODE_MCC:
-		rtw89_mcc_stop(rtwdev);
-		break;
-	default:
-		break;
-	}
-
 	clear_bit(drop, hal->entity_map);
 	rtw89_set_channel(rtwdev);
 }

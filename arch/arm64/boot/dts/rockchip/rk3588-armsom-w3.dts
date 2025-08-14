@@ -19,11 +19,9 @@
 #include "rk3588.dtsi"
 #include "rk3588-rk806-single.dtsi"
 #include "rk3588-linux.dtsi"
-// #include "rk3588-armsom-w3-display.dtsi"
-#include "rk3588-armsom-w3-camera.dtsi"
 
 / {
-	model = "ArmSoM W3";
+	model = "armsom w3";
 	compatible = "rockchip,rk3588-armsom-w3", "rockchip,rk3588";
 
 	/delete-node/ chosen;
@@ -306,6 +304,18 @@
 	};
 };
 
+&av1d {
+	status = "okay";
+};
+
+&av1d_mmu {
+	status = "okay";
+};
+
+&avsd {
+	status = "okay";
+};
+
 &cpu_l0 {
 	cpu-supply = <&vdd_cpu_lit_s0>;
 	mem-supply = <&vdd_cpu_lit_mem_s0>;
@@ -470,6 +480,10 @@
 	status = "okay";
 };
 
+&vepu {
+	status = "okay";
+};
+
 &mpp_srv {
 	status = "okay";
 };
@@ -531,14 +545,6 @@
 };
 
 &rkvenc1_mmu {
-	status = "okay";
-};
-
-&av1d {
-	status = "okay";
-};
-
-&av1d_mmu {
 	status = "okay";
 };
 
@@ -1185,4 +1191,9 @@
 			rockchip,pins = <1 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+/* watchdog */
+&wdt {
+	status = "okay";
 };

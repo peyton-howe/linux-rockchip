@@ -2,7 +2,7 @@
 /*
  * Rockchip UFS Host Controller driver
  *
- * Copyright (C) 2024 Rockchip Electronics Co.Ltd.
+ * Copyright (C) 2024 Rockchip Electronics Co., Ltd.
  */
 
 #include <linux/clk.h>
@@ -182,14 +182,25 @@ static int ufshcd_dme_link_startup(struct ufs_hba *hba)
 	return ret;
 }
 
+static void ufs_rockchip_controller_reset(struct ufs_rockchip_host *host)
+{
+	reset_control_assert(host->rst);
+	udelay(1);
+	reset_control_deassert(host->rst);
+}
+
 static int ufs_rockchip_hce_enable_notify(struct ufs_hba *hba,
 					 enum ufs_notify_change_status status)
 {
+	struct ufs_rockchip_host *host = ufshcd_get_variant(hba);
 	int err = 0;
 
 	if (status == PRE_CHANGE) {
 		int retry_outer = 3;
 		int retry_inner;
+
+		ufs_rockchip_controller_reset(host);
+
 start:
 		if (ufshcd_is_hba_active(hba))
 			/* change controller state to "reset state" */
@@ -306,6 +317,12 @@ static int ufs_rockchip_rk3576_phy_init(struct ufs_hba *hba)
 	ufs_sys_writel(host->mphy_base, 0x18, 0x1B0);
 	ufs_sys_writel(host->mphy_base, 0x18, 0x2F0);
 
+	ufs_sys_writel(host->mphy_base, 0x03, 0x128);
+	ufs_sys_writel(host->mphy_base, 0x03, 0x268);
+
+	ufs_sys_writel(host->mphy_base, 0x20, 0x12C);
+	ufs_sys_writel(host->mphy_base, 0x20, 0x26C);
+
 	ufs_sys_writel(host->mphy_base, 0xC0, 0x120);
 	ufs_sys_writel(host->mphy_base, 0xC0, 0x260);
 
@@ -368,9 +385,7 @@ static int ufs_rockchip_common_init(struct ufs_hba *hba)
 		return PTR_ERR(host->rst);
 	}
 
-	reset_control_assert(host->rst);
-	udelay(1);
-	reset_control_deassert(host->rst);
+	ufs_rockchip_controller_reset(host);
 
 	host->ref_out_clk = devm_clk_get(dev, "ref_out");
 	if (IS_ERR(host->ref_out_clk)) {
@@ -435,8 +450,6 @@ static int ufs_rockchip_rk3576_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_AUTO_BKOPS_SUSPEND;
 	/* Enable putting device into deep sleep */
 	hba->caps |= UFSHCD_CAP_DEEPSLEEP;
-	/* Enable devfreq of UFS */
-	hba->caps |= UFSHCD_CAP_CLK_SCALING;
 	/* Enable WriteBooster */
 	hba->caps |= UFSHCD_CAP_WB_EN;
 
@@ -609,9 +622,19 @@ static int ufs_rockchip_resume(struct device *dev)
 	return 0;
 }
 
+static void ufs_rockchip_shutdown(struct platform_device *pdev)
+{
+	struct ufs_hba *hba = platform_get_drvdata(pdev);
+
+	dev_info(&pdev->dev, "shutting down...\n");
+
+	ufshcd_pltfrm_shutdown(pdev);
+	ufs_rockchip_device_reset(hba);
+}
+
 static const struct dev_pm_ops ufs_rockchip_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ufs_rockchip_suspend, ufs_rockchip_resume)
-	SET_RUNTIME_PM_OPS(ufs_rockchip_runtime_suspend, ufs_rockchip_runtime_resume, NULL)
+	SYSTEM_SLEEP_PM_OPS(ufs_rockchip_suspend, ufs_rockchip_resume)
+	RUNTIME_PM_OPS(ufs_rockchip_runtime_suspend, ufs_rockchip_runtime_resume, NULL)
 	.prepare	 = ufshcd_suspend_prepare,
 	.complete	 = ufshcd_resume_complete,
 };
@@ -619,10 +642,10 @@ static const struct dev_pm_ops ufs_rockchip_pm_ops = {
 static struct platform_driver ufs_rockchip_pltform = {
 	.probe = ufs_rockchip_probe,
 	.remove = ufs_rockchip_remove,
-	.shutdown = ufshcd_pltfrm_shutdown,
+	.shutdown = ufs_rockchip_shutdown,
 	.driver = {
 		.name = "ufshcd-rockchip",
-		.pm = &ufs_rockchip_pm_ops,
+		.pm = pm_ptr(&ufs_rockchip_pm_ops),
 		.of_match_table = of_match_ptr(ufs_rockchip_of_match),
 	},
 };

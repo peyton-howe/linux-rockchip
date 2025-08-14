@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2020-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -214,8 +214,11 @@ int dummy_array[] = {
 	KBASE_KTRACE_CODE_MAKE_CODE(SCHED_SUSPENDED),
 	KBASE_KTRACE_CODE_MAKE_CODE(SCHED_SLEEPING),
 
-	/* info_val = mcu state */
-#define KBASEP_MCU_STATE(n) KBASE_KTRACE_CODE_MAKE_CODE(PM_MCU_ ## n),
+	/* info_val == true if FW Sleep-on-Idle is enabled, false otherwise */
+	KBASE_KTRACE_CODE_MAKE_CODE(FIRMWARE_SLEEP_ON_IDLE_CHANGED),
+
+/* info_val = mcu state */
+#define KBASEP_MCU_STATE(n) KBASE_KTRACE_CODE_MAKE_CODE(PM_MCU_##n),
 #include "backend/gpu/mali_kbase_pm_mcu_states.h"
 #undef KBASEP_MCU_STATE
 

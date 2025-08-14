@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Dingxian Wen <shawn.wen@rock-chips.com>
  */
@@ -112,5 +112,7 @@
 #define CSITX1_LPDT_DATA_IMD		(CSITX1_BASE + 0x00a8)
 #define CSITX1_DPHY_CTRL		(CSITX1_BASE + 0x00b0)
 #define CSI1_MAX_REGISTER		CSITX1_DPHY_CTRL
+
+#define CSI_SKIP_FRAME_NORMAL		1
 
 #endif

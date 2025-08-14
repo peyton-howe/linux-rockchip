@@ -38,7 +38,7 @@ const char *kutf_dsprintf(struct kutf_mempool *pool,
 {
 	va_list args;
 	int len;
-	int size;
+	size_t size;
 	void *buffer;
 
 	mutex_lock(&buffer_lock);
@@ -55,7 +55,7 @@ const char *kutf_dsprintf(struct kutf_mempool *pool,
 		pr_warn("%s: Truncated dsprintf message %s\n", __func__, fmt);
 		size = sizeof(tmp_buffer);
 	} else {
-		size = len + 1;
+		size = (size_t)(len + 1);
 	}
 
 	buffer = kutf_mempool_alloc(pool, size);

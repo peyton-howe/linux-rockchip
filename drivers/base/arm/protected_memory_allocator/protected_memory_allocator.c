@@ -314,7 +314,7 @@ static struct protected_memory_allocation *simple_pma_alloc_page(
 								start_idx,
 								order, pma);
 
-					epma_dev->num_free_pages -= 1 << order;
+					epma_dev->num_free_pages -= 1ULL << order;
 					spin_unlock(&epma_dev->rmem_lock);
 					return pma;
 				}

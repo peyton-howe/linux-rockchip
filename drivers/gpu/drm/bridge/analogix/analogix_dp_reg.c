@@ -738,9 +738,9 @@ void analogix_dp_set_training_pattern(struct analogix_dp_device *dp,
 	case TEST_PATTERN_80BIT:
 		reg = 0x3e0f83e0;
 		analogix_dp_write(dp, ANALOGIX_DP_TEST_80B_PATTERN0, reg);
-		reg = 0x0f83e0f8;
+		reg = 0x3e0f83e0;
 		analogix_dp_write(dp, ANALOGIX_DP_TEST_80B_PATTERN1, reg);
-		reg = 0x0000f83e;
+		reg = 0x000f83e0;
 		analogix_dp_write(dp, ANALOGIX_DP_TEST_80B_PATTERN2, reg);
 		reg = SCRAMBLING_ENABLE | LINK_QUAL_PATTERN_SET_80BIT;
 		analogix_dp_write(dp, ANALOGIX_DP_TRAINING_PTN_SET, reg);
@@ -1143,7 +1143,6 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 	u32 reg;
 	u8 *buffer = msg->buffer;
 	unsigned int i;
-	int num_transferred = 0;
 	int ret;
 
 	/* Buffer size of AUX CH is 16 bytes */
@@ -1195,7 +1194,6 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 			reg = buffer[i];
 			analogix_dp_write(dp, ANALOGIX_DP_BUF_DATA_0 + 4 * i,
 					  reg);
-			num_transferred++;
 		}
 	}
 
@@ -1244,7 +1242,6 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 			reg = analogix_dp_read(dp, ANALOGIX_DP_BUF_DATA_0 +
 					       4 * i);
 			buffer[i] = (unsigned char)reg;
-			num_transferred++;
 		}
 	}
 
@@ -1261,7 +1258,7 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 		 (msg->request & ~DP_AUX_I2C_MOT) == DP_AUX_NATIVE_READ)
 		msg->reply = DP_AUX_NATIVE_REPLY_ACK;
 
-	return (num_transferred == msg->size) ? num_transferred : -EBUSY;
+	return msg->size;
 
 aux_error:
 	/* if aux err happen, reset aux */

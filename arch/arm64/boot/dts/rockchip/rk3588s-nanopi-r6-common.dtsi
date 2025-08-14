@@ -103,6 +103,19 @@
 		vin-supply = <&vcc5v0_usb>;
 	};
 
+	simple_bat: battery {
+		compatible = "simple-battery";
+		voltage-max-design-microvolt = <21000000>;
+		voltage-min-design-microvolt = <4500000>;
+	};
+
+	nanopi_adc_vin: nanopi-adc-vin {
+		compatible = "nanopi-adc-power-v2";
+		io-channels = <&saradc 2>;
+		io-channel-names = "voltage";
+		monitored-battery = <&simple_bat>;
+	};
+
 	test-power {
 		status = "okay";
 	};
@@ -188,9 +201,9 @@
 };
 
 &hdmi0 {
+	cec-enable;
 	enable-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
-	cec-enable = "true";
 };
 
 &hdmi0_in_vp0 {
@@ -530,6 +543,10 @@
 	status = "okay";
 };
 
+&rkvtunnel {
+	status = "okay";
+};
+
 &avcc_1v8_s0 {
 	regulator-state-mem {
 		regulator-on-in-suspend;
@@ -669,12 +686,14 @@
 };
 
 &vepu {
-        status = "okay";
+	status = "okay";
 };
 
 &vop {
 	assigned-clocks = <&cru ACLK_VOP>;
 	assigned-clock-rates = <800000000>;
+	vop-supply = <&vdd_log_s0>;
+	support-multi-area;
 	status = "okay";
 	disable-win-move;
 };

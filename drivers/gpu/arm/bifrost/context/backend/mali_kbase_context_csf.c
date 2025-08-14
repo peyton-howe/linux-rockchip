@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -117,11 +117,9 @@ static void kbase_context_term_partial(
 	}
 }
 
-struct kbase_context *kbase_create_context(struct kbase_device *kbdev,
-	bool is_compat,
-	base_context_create_flags const flags,
-	unsigned long const api_version,
-	struct file *const filp)
+struct kbase_context *kbase_create_context(struct kbase_device *kbdev, bool is_compat,
+					   base_context_create_flags const flags,
+					   unsigned long const api_version, struct file *const filp)
 {
 	struct kbase_context *kctx;
 	unsigned int i = 0;
@@ -190,13 +188,15 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	 * Customer side that a hang could occur if context termination is
 	 * not blocked until the resume of GPU device.
 	 */
-	while (kbase_pm_context_active_handle_suspend(
-		kbdev, KBASE_PM_SUSPEND_HANDLER_DONT_INCREASE)) {
-		dev_info(kbdev->dev,
-			 "Suspend in progress when destroying context");
-		wait_event(kbdev->pm.resume_wait,
-			   !kbase_pm_is_suspending(kbdev));
+	if (kbase_has_arbiter(kbdev))
+		atomic_inc(&kbdev->pm.gpu_users_waiting);
+	while (kbase_pm_context_active_handle_suspend(kbdev,
+						      KBASE_PM_SUSPEND_HANDLER_DONT_INCREASE)) {
+		dev_dbg(kbdev->dev, "Suspend in progress when destroying context");
+		wait_event(kbdev->pm.resume_wait, !kbase_pm_is_suspending(kbdev));
 	}
+	if (kbase_has_arbiter(kbdev))
+		atomic_dec(&kbdev->pm.gpu_users_waiting);
 
 	kbase_mem_pool_group_mark_dying(&kctx->mem_pools);
 

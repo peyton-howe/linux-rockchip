@@ -33,13 +33,15 @@
 #include <linux/version.h>
 #include <linux/atomic.h>
 #include <linux/sched.h>
-
 #include <generated/autoconf.h>
 
 #include <kutf/kutf_suite.h>
 #include <kutf/kutf_resultset.h>
 #include <kutf/kutf_utils.h>
 #include <kutf/kutf_helpers.h>
+#ifdef CONFIG_KPROBES
+#include <kutf/kutf_kprobe.h>
+#endif
 
 /**
  * struct kutf_application - Structure which represents kutf application
@@ -413,7 +415,7 @@ static ssize_t kutf_debugfs_run_read(struct file *file, char __user *buf,
 		if (bytes_not_copied != 0)
 			return -EFAULT;
 		test_context->userdata.flags |= KUTF_USERDATA_WARNING_OUTPUT;
-		return message_len;
+		return (ssize_t)message_len;
 	case KUTF_RESULT_USERDATA:
 		message_len = strlen(res->message);
 		if (message_len > len-1) {
@@ -433,7 +435,7 @@ static ssize_t kutf_debugfs_run_read(struct file *file, char __user *buf,
 			pr_warn("Failed to copy data to user space buffer\n");
 			return -EFAULT;
 		}
-		return message_len+1;
+		return (ssize_t)message_len + 1;
 	default:
 		/* Fall through - this is a test result */
 		break;
@@ -454,33 +456,29 @@ static ssize_t kutf_debugfs_run_read(struct file *file, char __user *buf,
 
 	/* First copy the result string */
 	if (kutf_str_ptr) {
-		bytes_not_copied = copy_to_user(&buf[0], kutf_str_ptr,
-						kutf_str_len);
-		bytes_copied += kutf_str_len - bytes_not_copied;
+		bytes_not_copied = copy_to_user(&buf[0], kutf_str_ptr, kutf_str_len);
+		bytes_copied += (ssize_t)(kutf_str_len - bytes_not_copied);
 		if (bytes_not_copied)
 			goto exit;
 	}
 
 	/* Then the separator */
-	bytes_not_copied = copy_to_user(&buf[bytes_copied],
-					&separator, 1);
-	bytes_copied += 1 - bytes_not_copied;
+	bytes_not_copied = copy_to_user(&buf[bytes_copied], &separator, 1);
+	bytes_copied += (ssize_t)(1 - bytes_not_copied);
 	if (bytes_not_copied)
 		goto exit;
 
 	/* Finally Next copy the result string */
 	if (res->message) {
-		bytes_not_copied = copy_to_user(&buf[bytes_copied],
-						res->message, message_len);
-		bytes_copied += message_len - bytes_not_copied;
+		bytes_not_copied = copy_to_user(&buf[bytes_copied], res->message, message_len);
+		bytes_copied += (ssize_t)(message_len - bytes_not_copied);
 		if (bytes_not_copied)
 			goto exit;
 	}
 
 	/* Finally the terminator */
-	bytes_not_copied = copy_to_user(&buf[bytes_copied],
-					&terminator, 1);
-	bytes_copied += 1 - bytes_not_copied;
+	bytes_not_copied = copy_to_user(&buf[bytes_copied], &terminator, 1);
+	bytes_copied += (ssize_t)(1 - bytes_not_copied);
 
 exit:
 	return bytes_copied;
@@ -513,7 +511,7 @@ static ssize_t kutf_debugfs_run_write(struct file *file,
 	if (ret < 0)
 		return ret;
 
-	return len;
+	return (ssize_t)len;
 }
 
 /**
@@ -1169,6 +1167,10 @@ static int __init init_kutf_core(void)
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_KPROBES
+	kutf_kprobe_init(base_dir);
+#endif
+
 	return 0;
 }
 
@@ -1179,6 +1181,9 @@ static int __init init_kutf_core(void)
  */
 static void __exit exit_kutf_core(void)
 {
+#ifdef CONFIG_KPROBES
+	kutf_kprobe_exit();
+#endif
 	debugfs_remove_recursive(base_dir);
 
 	if (kutf_workq)

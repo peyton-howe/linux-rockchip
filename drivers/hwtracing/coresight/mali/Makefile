@@ -68,8 +68,14 @@ EXTRA_CFLAGS := $(foreach config,$(CONFIGS), \
 #
 # KBUILD_EXTRA_SYMBOLS to prevent warnings about unknown functions
 #
-EXTRA_SYMBOLS += $(CURDIR)/../../../../../drivers/gpu/arm/midgard/Module.symvers
-EXTRA_SYMBOLS += $(CURDIR)/../../../../../drivers/hwtracing/coresight/mali/Module.symvers
+GPU_SYMBOLS = $(M)/../../../gpu/arm/Module.symvers
+ifeq ($(MALI_KCONFIG_EXT_PREFIX),)
+    GPU_SYMBOLS = $(M)/../../../gpu/arm/midgard/Module.symvers
+endif
+
+EXTRA_SYMBOLS += \
+    $(GPU_SYMBOLS)
+
 
 # The following were added to align with W=1 in scripts/Makefile.extrawarn
 # from the Linux source tree
@@ -85,9 +91,11 @@ KBUILD_CFLAGS += $(call cc-option, -Wunused-const-variable)
 KBUILD_CFLAGS += $(call cc-option, -Wpacked-not-aligned)
 KBUILD_CFLAGS += $(call cc-option, -Wstringop-truncation)
 # The following turn off the warnings enabled by -Wextra
-KBUILD_CFLAGS += -Wno-missing-field-initializers
-KBUILD_CFLAGS += -Wno-sign-compare
-KBUILD_CFLAGS += -Wno-type-limits
+CFLAGS_MODULE += -Wno-missing-field-initializers
+CFLAGS_MODULE += -Wno-sign-compare
+CFLAGS_MODULE += -Wno-type-limits
+# The following ensures the stack frame does not get larger than a page
+CFLAGS_MODULE += -Wframe-larger-than=4096
 
 KBUILD_CPPFLAGS += -DKBUILD_EXTRA_WARN1
 

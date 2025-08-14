@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2010-2014, 2016-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -30,10 +30,10 @@
  * Valid ATE entries at level 3 are flagged with the value 3.
  * Valid ATE entries at level 0-2 are flagged with the value 1.
  */
-#define ENTRY_IS_ATE_L3		3ULL
-#define ENTRY_IS_ATE_L02	1ULL
-#define ENTRY_IS_INVAL		2ULL
-#define ENTRY_IS_PTE		3ULL
+#define ENTRY_IS_ATE_L3 3ULL
+#define ENTRY_IS_ATE_L02 1ULL
+#define ENTRY_IS_INVAL 0ULL
+#define ENTRY_IS_PTE 3ULL
 
 #define ENTRY_ACCESS_RW (1ULL << 6)     /* bits 6:7 */
 #define ENTRY_ACCESS_RO (3ULL << 6)
@@ -75,7 +75,7 @@ static void mmu_disable_as(struct kbase_device *kbdev, int as_nr)
 	struct kbase_mmu_setup * const current_setup = &as->current_setup;
 
 	current_setup->transtab = 0ULL;
-	current_setup->transcfg = AS_TRANSCFG_ADRMODE_UNMAPPED;
+	current_setup->transcfg = AS_TRANSCFG_MODE_SET(0ULL, AS_TRANSCFG_MODE_UNMAPPED);
 
 	/* Apply the address space setting */
 	kbase_mmu_hw_configure(kbdev, as);
@@ -87,7 +87,7 @@ static phys_addr_t pte_to_phy_addr(u64 entry)
 		return 0;
 
 	entry &= ~VALID_ENTRY_MASK;
-	return entry & ~0xFFF;
+	return entry & ~0xFFFULL;
 }
 
 static int ate_is_valid(u64 ate, int const level)
@@ -189,7 +189,7 @@ static void set_num_valid_entries(u64 *pgd, unsigned int num_of_valid_entries)
 
 static void entry_set_pte(u64 *entry, phys_addr_t phy)
 {
-	page_table_entry_set(entry, (phy & PAGE_MASK) | ENTRY_ACCESS_BIT | ENTRY_IS_PTE);
+	page_table_entry_set(entry, (phy & GPU_PAGE_MASK) | ENTRY_ACCESS_BIT | ENTRY_IS_PTE);
 }
 
 static void entries_invalidate(u64 *entry, u32 count)

@@ -168,7 +168,7 @@ enum rtw89_mac_ax_l0_to_l1_event {
 	MAC_AX_L0_TO_L1_EVENT_MAX = 15,
 };
 
-#define RTW89_PORT_OFFSET_TU_TO_32US(shift_tu) ((shift_tu) * 1024 / 32)
+#define RTW89_PORT_OFFSET_MS_TO_32US(n, shift_ms) ((n) * (shift_ms) * 1000 / 32)
 
 enum rtw89_mac_dbg_port_sel {
 	/* CMAC 0 related */
@@ -348,7 +348,6 @@ enum rtw89_mac_mem_sel {
 	RTW89_MAC_MEM_BSSID_CAM,
 	RTW89_MAC_MEM_TXD_FIFO_0_V1,
 	RTW89_MAC_MEM_TXD_FIFO_1_V1,
-	RTW89_MAC_MEM_WD_PAGE,
 
 	/* keep last */
 	RTW89_MAC_MEM_NUM,
@@ -503,7 +502,6 @@ enum rtw89_mac_bf_rrsc_rate {
 	({typeof(_addr) __addr = (_addr); \
 	  __addr >= R_AX_CMAC_REG_START && __addr <= R_AX_CMAC_REG_END; })
 #define RTW89_MAC_AX_BAND_REG_OFFSET 0x2000
-#define RTW89_MAC_BE_BAND_REG_OFFSET 0x4000
 
 #define PTCL_IDLE_POLL_CNT	10000
 #define SW_CVR_DUR_US	8
@@ -846,8 +844,6 @@ struct rtw89_mac_size_set {
 	const struct rtw89_ple_quota ple_qt47;
 	const struct rtw89_ple_quota ple_qt58;
 	const struct rtw89_ple_quota ple_qt_52a_wow;
-	const struct rtw89_ple_quota ple_qt_52b_wow;
-	const struct rtw89_ple_quota ple_qt_51b_wow;
 };
 
 extern const struct rtw89_mac_size_set rtw89_mac_size;

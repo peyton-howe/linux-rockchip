@@ -23,7 +23,7 @@
 #include "rk3588-orangepi-5-max-camera2.dtsi"
 
 / {
-	model = "Orange Pi 5 Max";
+	model = "RK3588 OPi 5 Max";
 	compatible = "rockchip,rk3588-orangepi-5-max", "rockchip,rk3588";
 
 	/delete-node/ chosen;
@@ -118,6 +118,24 @@
 		rockchip,cpu = <&i2s6_8ch>;
 		rockchip,codec = <&hdmi1>;
 		rockchip,jack-det;
+	};
+
+	spdif_tx1_dc: spdif-tx1-dc {
+		status = "disabled";
+		compatible = "linux,spdif-dit";
+		#sound-dai-cells = <0>;
+	};
+
+	spdif_tx1_sound: spdif-tx1-sound {
+		status = "disabled";
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "rockchip,spdif-tx1";
+		simple-audio-card,cpu {
+			sound-dai = <&spdif_tx1>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&spdif_tx1_dc>;
+		};
 	};
 
 	test-power {
@@ -413,7 +431,15 @@
 	};
 };
 
+&av1d {
+	status = "okay";
+};
+
 &av1d_mmu {
+	status = "okay";
+};
+
+&avsd {
 	status = "okay";
 };
 
@@ -732,6 +758,27 @@
 };
 
 &usbdrd3_0 {
+	status = "okay";
+};
+
+&usbdrd_dwc3_0 {
+	dr_mode = "host";
+	status = "okay";
+};
+
+&usbhost3_0 {
+	status = "okay";
+};
+
+&usbhost_dwc3_0 {
+	status = "okay";
+};
+
+&usbdrd3_1 {
+	status = "okay";
+};
+
+&usbdrd_dwc3_1 {
 	status = "okay";
 };
 
@@ -1130,7 +1177,7 @@
 
 &usbdrd_dwc3_0 {
 	status = "okay";
-	dr_mode = "host";
+	dr_mode = "otg";
 	extcon = <&u2phy0>;
 };
 
@@ -1151,19 +1198,19 @@
 };
 
 &rkcif {
-	status = "okay";
+        status = "okay";
 };
 
 &rkcif_mmu {
-	status = "okay";
+        status = "okay";
 };
 
 &rkisp0 {
-	status = "okay";
+        status = "okay";
 };
 
 &isp0_mmu {
-	status = "okay";
+        status = "okay";
 };
 
 &usbdrd3_1 {

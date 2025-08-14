@@ -785,10 +785,10 @@ static int rockchip_init_pvtpll_info(struct rockchip_opp_info *info)
 		return -ENOMEM;
 
 	opp_table = dev_pm_opp_get_opp_table(info->dev);
-	if (!opp_table) {
+	if (IS_ERR(opp_table)) {
 		kfree(info->opp_table);
 		info->opp_table = NULL;
-		return -ENOMEM;
+		return PTR_ERR(opp_table);
 	}
 
 	mutex_lock(&opp_table->lock);
@@ -863,7 +863,7 @@ static void rockchip_pvtpll_calibrate_opp(struct rockchip_opp_info *info)
 		return;
 
 	opp_table = dev_pm_opp_get_opp_table(info->dev);
-	if (!opp_table)
+	if (IS_ERR(opp_table))
 		return;
 
 	if (info->clocks) {
@@ -1020,7 +1020,7 @@ static void rockchip_pvtpll_add_length(struct rockchip_opp_info *info)
 		goto out;
 
 	opp_table = dev_pm_opp_get_opp_table(info->dev);
-	if (!opp_table)
+	if (IS_ERR(opp_table))
 		goto out;
 	old_rate = clk_get_rate(opp_table->clk);
 	opp_flag = OPP_ADD_LENGTH | ((margin & OPP_LENGTH_MASK) << OPP_LENGTH_SHIFT);
@@ -1349,6 +1349,9 @@ static int rockchip_get_soc_info(struct device *dev, struct device_node *np,
 	/* J */
 	else if (value == 0xa)
 		*bin = 2;
+	/* S */
+	else if (value == 0x13)
+		*bin = 3;
 
 	if (*bin < 0)
 		*bin = 0;
@@ -1386,8 +1389,10 @@ static void rockchip_init_pvtpll_table(struct device *dev,
 	of_node_put(clkspec.np);
 
 	res = sip_smc_get_pvtpll_info(PVTPLL_GET_INFO, info->pvtpll_clk_id);
-	if (res.a0)
+	if (res.a0) {
+		info->pvtpll_smc = false;
 		goto out;
+	}
 	if (!res.a1)
 		info->pvtpll_low_temp = true;
 
@@ -1692,6 +1697,8 @@ int rockchip_init_opp_info(struct device *dev, struct rockchip_opp_info *info,
 	info->bin = -EINVAL;
 	info->process = -EINVAL;
 	info->volt_sel = -EINVAL;
+	info->pvtpll_clk_id = UINT_MAX;
+	info->pvtpll_smc = true;
 	info->is_runtime_active = true;
 	mutex_init(&info->dvfs_mutex);
 
@@ -1783,8 +1790,8 @@ static int rockchip_adjust_opp_by_irdrop(struct device *dev,
 	rockchip_get_sel_table(np, "rockchip,board-irdrop", &irdrop_table);
 
 	opp_table = dev_pm_opp_get_opp_table(dev);
-	if (!opp_table) {
-		ret =  -ENOMEM;
+	if (IS_ERR(opp_table)) {
+		ret = PTR_ERR(opp_table);
 		goto out;
 	}
 
@@ -1855,7 +1862,7 @@ static void rockchip_adjust_opp_by_mbist_vmin(struct device *dev,
 		return;
 
 	opp_table = dev_pm_opp_get_opp_table(dev);
-	if (!opp_table)
+	if (IS_ERR(opp_table))
 		return;
 
 	mutex_lock(&opp_table->lock);
@@ -1887,7 +1894,7 @@ static void rockchip_adjust_opp_by_otp(struct device *dev,
 		 opp_info.min_freq, opp_info.max_freq, opp_info.volt);
 
 	opp_table = dev_pm_opp_get_opp_table(dev);
-	if (!opp_table)
+	if (IS_ERR(opp_table))
 		return;
 
 	mutex_lock(&opp_table->lock);
@@ -2052,12 +2059,38 @@ static int rockchip_opp_parse_supplies(struct device *dev,
 	return 0;
 }
 
+static int rockchip_pvtpll_set_volt_sel(struct device *dev,
+					struct rockchip_opp_info *info)
+{
+	struct arm_smccc_res res;
+
+	if (!info)
+		return 0;
+	if (info->volt_sel < 0)
+		return 0;
+	if (info->pvtpll_clk_id == UINT_MAX)
+		return 0;
+
+	if (!info->pvtpll_smc)
+		return rockchip_pvtpll_volt_sel_adjust(info->pvtpll_clk_id,
+						       info->volt_sel);
+
+	res = sip_smc_pvtpll_config(PVTPLL_VOLT_SEL, info->pvtpll_clk_id,
+				    (u32)info->volt_sel, 0, 0, 0, 0);
+	if (res.a0)
+		dev_err(dev, "%s: error cfg clk_id=%u voltsel (%d)\n", __func__,
+			info->pvtpll_clk_id, (int)res.a0);
+
+	return 0;
+}
+
 int rockchip_adjust_opp_table(struct device *dev, struct rockchip_opp_info *info)
 {
 	rockchip_opp_parse_supplies(dev, info);
 	rockchip_adjust_power_scale(dev, info);
 	rockchip_pvtpll_calibrate_opp(info);
 	rockchip_pvtpll_add_length(info);
+	rockchip_pvtpll_set_volt_sel(dev, info);
 
 	return 0;
 }
@@ -2201,6 +2234,46 @@ int rockchip_set_intermediate_rate(struct device *dev,
 	return clk_set_rate(clk, new_freq | OPP_SCALING_DOWN_INTER);
 }
 EXPORT_SYMBOL(rockchip_set_intermediate_rate);
+
+int rockchip_opp_set_low_length(struct device *dev, struct device_node *np,
+				struct rockchip_opp_info *opp_info)
+{
+	struct clk *clk;
+	unsigned long old_rate;
+	unsigned int low_len_sel;
+	u32 opp_flag = 0;
+	int ret = 0;
+
+	if (opp_info->volt_sel < 0)
+		return 0;
+
+	clk = clk_get(dev, NULL);
+	if (IS_ERR(clk)) {
+		dev_warn(dev, "failed to get cpu clk\n");
+		return PTR_ERR(clk);
+	}
+
+	/* low speed grade should change to low length */
+	if (of_property_read_u32(np, "rockchip,pvtm-low-len-sel",
+				 &low_len_sel))
+		goto out;
+	if (opp_info->volt_sel > low_len_sel)
+		goto out;
+	opp_flag = OPP_LENGTH_LOW;
+
+	old_rate = clk_get_rate(clk);
+	ret = clk_set_rate(clk, old_rate | opp_flag);
+	if (ret) {
+		dev_err(dev, "failed to change length\n");
+		goto out;
+	}
+	clk_set_rate(clk, old_rate);
+out:
+	clk_put(clk);
+
+	return ret;
+}
+EXPORT_SYMBOL(rockchip_opp_set_low_length);
 
 static int rockchip_opp_set_volt(struct device *dev, struct regulator *reg,
 				 struct dev_pm_opp_supply *supply, char *reg_name)

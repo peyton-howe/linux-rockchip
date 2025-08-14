@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * Copyright (c) 2020 Rockchip Electronics Co., Ltd
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  *
  * author:
  *	Alpha Lin, alpha.lin@rock-chips.com
@@ -654,6 +654,7 @@ struct platform_driver rockchip_jpgdec_driver = {
 	.driver = {
 		.name = JPGDEC_DRIVER_NAME,
 		.of_match_table = of_match_ptr(mpp_jpgdec_dt_match),
+		.pm = &mpp_common_pm_ops,
 	},
 };
 EXPORT_SYMBOL(rockchip_jpgdec_driver);

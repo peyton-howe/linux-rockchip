@@ -23,13 +23,16 @@
 #define _KBASE_MMU_H_
 
 #include <uapi/gpu/arm/bifrost/mali_base_kernel.h>
+#include <mali_kbase_debug.h>
 
 #define KBASE_MMU_PAGE_ENTRIES 512
 #define KBASE_MMU_INVALID_PGD_ADDRESS (~(phys_addr_t)0)
 
 struct kbase_context;
+struct kbase_device;
 struct kbase_mmu_table;
 struct kbase_va_region;
+struct tagged_addr;
 
 /**
  * enum kbase_caller_mmu_sync_info - MMU-synchronous caller info.
@@ -158,12 +161,34 @@ int kbase_mmu_insert_pages_no_flush(struct kbase_device *kbdev, struct kbase_mmu
 int kbase_mmu_insert_pages(struct kbase_device *kbdev, struct kbase_mmu_table *mmut, u64 vpfn,
 			   struct tagged_addr *phys, size_t nr, unsigned long flags, int as_nr,
 			   int group_id, enum kbase_caller_mmu_sync_info mmu_sync_info,
-			   struct kbase_va_region *reg, bool ignore_page_migration);
-int kbase_mmu_insert_imported_pages(struct kbase_device *kbdev, struct kbase_mmu_table *mmut,
-				    u64 vpfn, struct tagged_addr *phys, size_t nr,
-				    unsigned long flags, int as_nr, int group_id,
-				    enum kbase_caller_mmu_sync_info mmu_sync_info,
-				    struct kbase_va_region *reg);
+			   struct kbase_va_region *reg);
+
+/**
+ * kbase_mmu_insert_pages_skip_status_update - Map 'nr' pages pointed to by 'phys'
+ * at GPU PFN 'vpfn' for GPU address space number 'as_nr'.
+ *
+ * @kbdev:         Instance of GPU platform device, allocated from the probe method.
+ * @mmut:          GPU page tables.
+ * @vpfn:          Start page frame number (in PAGE_SIZE units) of the GPU virtual pages to map.
+ * @phys:          Physical address of the page to be mapped.
+ * @nr:            The number of pages (in PAGE_SIZE units) to map.
+ * @flags:         Bitmask of attributes of the GPU memory region being mapped.
+ * @as_nr:         The GPU address space number.
+ * @group_id:      The physical memory group in which the page was allocated.
+ * @mmu_sync_info: MMU-synchronous caller info.
+ * @reg:           The region whose physical allocation is to be mapped.
+ *
+ * Similar to kbase_mmu_insert_pages() but skips updating each pages metadata
+ * for page migration.
+ *
+ * Return: 0 if successful, otherwise a negative error code.
+ */
+int kbase_mmu_insert_pages_skip_status_update(struct kbase_device *kbdev,
+					      struct kbase_mmu_table *mmut, u64 vpfn,
+					      struct tagged_addr *phys, size_t nr,
+					      unsigned long flags, int as_nr, int group_id,
+					      enum kbase_caller_mmu_sync_info mmu_sync_info,
+					      struct kbase_va_region *reg);
 int kbase_mmu_insert_aliased_pages(struct kbase_device *kbdev, struct kbase_mmu_table *mmut,
 				   u64 vpfn, struct tagged_addr *phys, size_t nr,
 				   unsigned long flags, int as_nr, int group_id,
@@ -225,11 +250,11 @@ int kbase_mmu_update_pages(struct kbase_context *kctx, u64 vpfn,
  * kbase_mmu_update_csf_mcu_pages - Update MCU mappings with changes of phys and flags
  *
  * @kbdev:    Pointer to kbase device.
- * @vpfn:     Virtual PFN (Page Frame Number) of the first page to update
+ * @vpfn:     GPU Virtual PFN (Page Frame Number), in PAGE_SIZE units, of the first page to update
  * @phys:     Pointer to the array of tagged physical addresses of the physical
  *            pages that are pointed to by the page table entries (that need to
  *            be updated).
- * @nr:       Number of pages to update
+ * @nr:       Number of pages (in PAGE_SIZE units) to update
  * @flags:    Flags
  * @group_id: The physical memory group in which the page was allocated.
  *            Valid range is 0..(MEMORY_GROUP_MANAGER_NR_GROUPS-1).

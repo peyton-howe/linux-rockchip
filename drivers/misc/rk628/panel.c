@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (C) 2020 Rockchip Electronics Co., Ltd.
  *
  * Author: Guochun Huang <hero.huang@rock-chips.com>
  */
@@ -148,14 +148,14 @@ int rk628_panel_info_get(struct rk628 *rk628, struct device_node *np)
 		return ret;
 	}
 
-	panel->enable_gpio = devm_gpiod_get_optional(dev, "panel-enable", GPIOD_OUT_LOW);
+	panel->enable_gpio = devm_gpiod_get_optional(dev, "panel-enable", GPIOD_ASIS);
 	if (IS_ERR(panel->enable_gpio)) {
 		ret = PTR_ERR(panel->enable_gpio);
 		dev_err(dev, "failed to request panel enable GPIO: %d\n", ret);
 		return ret;
 	}
 
-	panel->reset_gpio = devm_gpiod_get_optional(dev, "panel-reset", GPIOD_OUT_LOW);
+	panel->reset_gpio = devm_gpiod_get_optional(dev, "panel-reset", GPIOD_ASIS);
 	if (IS_ERR(panel->reset_gpio)) {
 		ret = PTR_ERR(panel->reset_gpio);
 		dev_err(dev, "failed to request panel reset GPIO: %d\n", ret);
@@ -164,14 +164,15 @@ int rk628_panel_info_get(struct rk628 *rk628, struct device_node *np)
 
 	backlight = of_parse_phandle(dev->of_node, "panel-backlight", 0);
 	if (backlight) {
-		panel->backlight = of_find_backlight_by_node(backlight);
-		of_node_put(backlight);
+		if (!rk628->pwm_bl_en) {
+			panel->backlight = of_find_backlight_by_node(backlight);
+			of_node_put(backlight);
 
-		if (!panel->backlight) {
-			dev_err(dev, "failed to find backlight\n");
-			return -EPROBE_DEFER;
+			if (!panel->backlight) {
+				dev_err(dev, "%s: failed to find backlight\n", __func__);
+				return -EPROBE_DEFER;
+			}
 		}
-
 	}
 
 	device_property_read_u32(dev, "panel-prepare-delay-ms", &panel->delay.prepare);

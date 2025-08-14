@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2020-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -260,12 +260,11 @@ static const char *kutf_clk_trace_do_get_rate(struct kutf_context *context,
 		spin_unlock(&kbdev->pm.clk_rtm.lock);
 
 		if ((i + 1) == data->nclks)
-			ret += snprintf(portal_msg_buf + ret,
-				PORTAL_MSG_LEN - ret, "0x%lx], GPU_IDLE:%d}",
-				rate, idle);
+			ret += snprintf(portal_msg_buf + ret, PORTAL_MSG_LEN - (size_t)ret,
+					"0x%lx], GPU_IDLE:%d}", rate, idle);
 		else
-			ret += snprintf(portal_msg_buf + ret,
-				PORTAL_MSG_LEN - ret, "0x%lx, ", rate);
+			ret += snprintf(portal_msg_buf + ret, PORTAL_MSG_LEN - (size_t)ret,
+					"0x%lx, ", rate);
 
 		if (ret >= PORTAL_MSG_LEN) {
 			pr_warn("Message buf overflow with rate array data\n");
@@ -327,9 +326,9 @@ static const char *kutf_clk_trace_do_get_snapshot(struct kutf_context *context,
 			fmt = "(0x%lx, 0x%lx, %u, %u)]}";
 		else
 			fmt = "(0x%lx, 0x%lx, %u, %u), ";
-		ret += snprintf(portal_msg_buf + ret, PORTAL_MSG_LEN - ret,
-			    fmt, snapshot.previous_rate, snapshot.current_rate,
-			    snapshot.rate_up_cnt, snapshot.rate_down_cnt);
+		ret += snprintf(portal_msg_buf + ret, PORTAL_MSG_LEN - (size_t)ret, fmt,
+				snapshot.previous_rate, snapshot.current_rate, snapshot.rate_up_cnt,
+				snapshot.rate_down_cnt);
 		if (ret >= PORTAL_MSG_LEN) {
 			pr_warn("Message buf overflow with snapshot data\n");
 			return kutf_dsprintf(&context->fixture_pool,
@@ -439,7 +438,7 @@ static const char *kutf_clk_trace_do_get_platform(
 	const void *arbiter_if_node = NULL;
 	const void *power_node = NULL;
 	const char *platform = "GPU";
-#if defined(CONFIG_MALI_ARBITER_SUPPORT) && defined(CONFIG_OF)
+#if defined(CONFIG_OF)
 	struct kutf_clk_rate_trace_fixture_data *data = context->fixture;
 
 	arbiter_if_node =

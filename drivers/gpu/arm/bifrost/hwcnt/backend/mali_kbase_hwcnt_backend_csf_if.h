@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2021-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2021-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -63,7 +63,8 @@ struct kbase_hwcnt_backend_csf_if_enable {
  *                     counter dump. dump_bytes = prfcnt_hw_size + prfcnt_fw_size.
  * @prfcnt_block_size: Bytes of each performance counter block.
  * @l2_count:          The MMU L2 cache count.
- * @core_mask:         Shader core mask.
+ * @csg_count:         The total number of CSGs in the system
+ * @sc_core_mask:         Shader core mask.
  * @clk_cnt:           Clock domain count in the system.
  * @clearing_samples:  Indicates whether counters are cleared after each sample
  *                     is taken.
@@ -74,7 +75,8 @@ struct kbase_hwcnt_backend_csf_if_prfcnt_info {
 	size_t dump_bytes;
 	size_t prfcnt_block_size;
 	size_t l2_count;
-	u64 core_mask;
+	u32 csg_count;
+	u64 sc_core_mask;
 	u8 clk_cnt;
 	bool clearing_samples;
 };
@@ -107,6 +109,20 @@ typedef void kbase_hwcnt_backend_csf_if_lock_fn(struct kbase_hwcnt_backend_csf_i
  */
 typedef void kbase_hwcnt_backend_csf_if_unlock_fn(struct kbase_hwcnt_backend_csf_if_ctx *ctx,
 						  unsigned long flags);
+
+/**
+ * typedef kbase_hwcnt_backend_csf_if_acquire_fn - Enable counter collection.
+ *
+ * @ctx:   Non-NULL pointer to a CSF context.
+ */
+typedef void (*kbase_hwcnt_backend_csf_if_acquire_fn)(struct kbase_hwcnt_backend_csf_if_ctx *ctx);
+
+/**
+ * typedef kbase_hwcnt_backend_csf_if_release_fn - Disable counter collection.
+ *
+ * @ctx:   Non-NULL pointer to a CSF context.
+ */
+typedef void (*kbase_hwcnt_backend_csf_if_release_fn)(struct kbase_hwcnt_backend_csf_if_ctx *ctx);
 
 /**
  * typedef kbase_hwcnt_backend_csf_if_get_prfcnt_info_fn - Get performance
@@ -266,6 +282,10 @@ kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn(struct kbase_hwcnt_backend_csf
  * @assert_lock_held:    Function ptr to assert backend spinlock is held.
  * @lock:                Function ptr to acquire backend spinlock.
  * @unlock:              Function ptr to release backend spinlock.
+ * @acquire:             Callback to indicate that counter collection has
+ *                       been enabled.
+ * @release:             Callback to indicate that counter collection has
+ *                       been disabled.
  * @get_prfcnt_info:     Function ptr to get performance counter related
  *                       information.
  * @ring_buf_alloc:      Function ptr to allocate ring buffer for CSF HWC.
@@ -283,20 +303,22 @@ kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn(struct kbase_hwcnt_backend_csf
  */
 struct kbase_hwcnt_backend_csf_if {
 	struct kbase_hwcnt_backend_csf_if_ctx *ctx;
-	kbase_hwcnt_backend_csf_if_assert_lock_held_fn *assert_lock_held;
-	kbase_hwcnt_backend_csf_if_lock_fn *lock;
-	kbase_hwcnt_backend_csf_if_unlock_fn *unlock;
-	kbase_hwcnt_backend_csf_if_get_prfcnt_info_fn *get_prfcnt_info;
-	kbase_hwcnt_backend_csf_if_ring_buf_alloc_fn *ring_buf_alloc;
-	kbase_hwcnt_backend_csf_if_ring_buf_sync_fn *ring_buf_sync;
-	kbase_hwcnt_backend_csf_if_ring_buf_free_fn *ring_buf_free;
-	kbase_hwcnt_backend_csf_if_timestamp_ns_fn *timestamp_ns;
-	kbase_hwcnt_backend_csf_if_dump_enable_fn *dump_enable;
-	kbase_hwcnt_backend_csf_if_dump_disable_fn *dump_disable;
-	kbase_hwcnt_backend_csf_if_dump_request_fn *dump_request;
-	kbase_hwcnt_backend_csf_if_get_indexes_fn *get_indexes;
-	kbase_hwcnt_backend_csf_if_set_extract_index_fn *set_extract_index;
-	kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn *get_gpu_cycle_count;
+	kbase_hwcnt_backend_csf_if_assert_lock_held_fn assert_lock_held;
+	kbase_hwcnt_backend_csf_if_lock_fn lock;
+	kbase_hwcnt_backend_csf_if_unlock_fn unlock;
+	kbase_hwcnt_backend_csf_if_acquire_fn acquire;
+	kbase_hwcnt_backend_csf_if_release_fn release;
+	kbase_hwcnt_backend_csf_if_get_prfcnt_info_fn get_prfcnt_info;
+	kbase_hwcnt_backend_csf_if_ring_buf_alloc_fn ring_buf_alloc;
+	kbase_hwcnt_backend_csf_if_ring_buf_sync_fn ring_buf_sync;
+	kbase_hwcnt_backend_csf_if_ring_buf_free_fn ring_buf_free;
+	kbase_hwcnt_backend_csf_if_timestamp_ns_fn timestamp_ns;
+	kbase_hwcnt_backend_csf_if_dump_enable_fn dump_enable;
+	kbase_hwcnt_backend_csf_if_dump_disable_fn dump_disable;
+	kbase_hwcnt_backend_csf_if_dump_request_fn dump_request;
+	kbase_hwcnt_backend_csf_if_get_indexes_fn get_indexes;
+	kbase_hwcnt_backend_csf_if_set_extract_index_fn set_extract_index;
+	kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn get_gpu_cycle_count;
 };
 
 #endif /* #define _KBASE_HWCNT_BACKEND_CSF_IF_H_ */

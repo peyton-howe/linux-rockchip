@@ -87,8 +87,8 @@ static inline bool can_alloc_page(struct kbase_mem_pool *pool, struct task_struc
 
 static size_t kbase_mem_pool_capacity(struct kbase_mem_pool *pool)
 {
-	ssize_t max_size = kbase_mem_pool_max_size(pool);
-	ssize_t cur_size = kbase_mem_pool_size(pool);
+	ssize_t max_size = (ssize_t)kbase_mem_pool_max_size(pool);
+	ssize_t cur_size = (ssize_t)kbase_mem_pool_size(pool);
 
 	return max(max_size - cur_size, (ssize_t)0);
 }
@@ -302,8 +302,8 @@ struct page *kbase_mem_alloc_page(struct kbase_mem_pool *pool)
 		return NULL;
 	}
 
-	/* Setup page metadata for 4KB pages when page migration is enabled */
-	if (!pool->order && kbase_page_migration_enabled) {
+	/* Setup page metadata for small pages when page migration is enabled */
+	if (!pool->order && kbase_is_page_migration_enabled()) {
 		INIT_LIST_HEAD(&p->lru);
 		if (!kbase_alloc_page_metadata(kbdev, p, dma_addr, pool->group_id)) {
 			dma_unmap_page(dev, dma_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
@@ -403,13 +403,16 @@ int kbase_mem_pool_grow(struct kbase_mem_pool *pool, size_t nr_to_grow,
 			pool->dont_reclaim = false;
 			kbase_mem_pool_shrink_locked(pool, nr_to_grow);
 			kbase_mem_pool_unlock(pool);
+			if (page_owner)
+				dev_info(pool->kbdev->dev, "%s : Ctx of process %s/%d dying",
+					 __func__, page_owner->comm, task_pid_nr(page_owner));
 
-			return -ENOMEM;
+			return -EPERM;
 		}
 		kbase_mem_pool_unlock(pool);
 
-		if (unlikely(!can_alloc_page(pool, page_owner, alloc_from_kthread)))
-			return -ENOMEM;
+		if (unlikely(!can_alloc_page(pool, page_owner)))
+			return -EPERM;
 
 		p = kbase_mem_alloc_page(pool);
 		if (!p) {
@@ -479,7 +482,9 @@ static unsigned long kbase_mem_pool_reclaim_count_objects(struct shrinker *s,
 	struct kbase_mem_pool *pool;
 	size_t pool_size;
 
-	pool = container_of(s, struct kbase_mem_pool, reclaim);
+	CSTD_UNUSED(sc);
+
+	pool = KBASE_GET_KBASE_DATA_FROM_SHRINKER(s, struct kbase_mem_pool, reclaim);
 
 	kbase_mem_pool_lock(pool);
 	if (pool->dont_reclaim && !pool->dying) {
@@ -501,7 +506,7 @@ static unsigned long kbase_mem_pool_reclaim_scan_objects(struct shrinker *s,
 	struct kbase_mem_pool *pool;
 	unsigned long freed;
 
-	pool = container_of(s, struct kbase_mem_pool, reclaim);
+	pool = KBASE_GET_KBASE_DATA_FROM_SHRINKER(s, struct kbase_mem_pool, reclaim);
 
 	kbase_mem_pool_lock(pool);
 	if (pool->dont_reclaim && !pool->dying) {
@@ -527,8 +532,9 @@ int kbase_mem_pool_init(struct kbase_mem_pool *pool, const struct kbase_mem_pool
 			unsigned int order, int group_id, struct kbase_device *kbdev,
 			struct kbase_mem_pool *next_pool)
 {
-	if (WARN_ON(group_id < 0) ||
-		WARN_ON(group_id >= MEMORY_GROUP_MANAGER_NR_GROUPS)) {
+	struct shrinker *reclaim;
+
+	if (WARN_ON(group_id < 0) || WARN_ON(group_id >= MEMORY_GROUP_MANAGER_NR_GROUPS)) {
 		return -EINVAL;
 	}
 
@@ -544,18 +550,17 @@ int kbase_mem_pool_init(struct kbase_mem_pool *pool, const struct kbase_mem_pool
 	spin_lock_init(&pool->pool_lock);
 	INIT_LIST_HEAD(&pool->page_list);
 
-	pool->reclaim.count_objects = kbase_mem_pool_reclaim_count_objects;
-	pool->reclaim.scan_objects = kbase_mem_pool_reclaim_scan_objects;
-	pool->reclaim.seeks = DEFAULT_SEEKS;
-	/* Kernel versions prior to 3.1 :
-	 * struct shrinker does not define batch
-	 */
-	pool->reclaim.batch = 0;
-#if KERNEL_VERSION(6, 0, 0) > LINUX_VERSION_CODE
-	register_shrinker(&pool->reclaim);
-#else
-	register_shrinker(&pool->reclaim, "mali-mem-pool");
-#endif
+	reclaim = KBASE_INIT_RECLAIM(pool, reclaim, "mali-mem-pool");
+	if (!reclaim)
+		return -ENOMEM;
+	KBASE_SET_RECLAIM(pool, reclaim, reclaim);
+
+	reclaim->count_objects = kbase_mem_pool_reclaim_count_objects;
+	reclaim->scan_objects = kbase_mem_pool_reclaim_scan_objects;
+	reclaim->seeks = DEFAULT_SEEKS;
+	reclaim->batch = 0;
+
+	KBASE_REGISTER_SHRINKER(reclaim, "mali-mem-pool", pool);
 
 	pool_dbg(pool, "initialized\n");
 
@@ -581,7 +586,7 @@ void kbase_mem_pool_term(struct kbase_mem_pool *pool)
 
 	pool_dbg(pool, "terminate()\n");
 
-	unregister_shrinker(&pool->reclaim);
+	KBASE_UNREGISTER_SHRINKER(pool->reclaim);
 
 	kbase_mem_pool_lock(pool);
 	pool->max_size = 0;
@@ -706,7 +711,7 @@ void kbase_mem_pool_free_locked(struct kbase_mem_pool *pool, struct page *p,
 	}
 }
 
-int kbase_mem_pool_alloc_pages(struct kbase_mem_pool *pool, size_t nr_4k_pages,
+int kbase_mem_pool_alloc_pages(struct kbase_mem_pool *pool, size_t nr_small_pages,
 			       struct tagged_addr *pages, bool partial_allowed,
 			       struct task_struct *page_owner)
 {
@@ -717,12 +722,12 @@ int kbase_mem_pool_alloc_pages(struct kbase_mem_pool *pool, size_t nr_4k_pages,
 	size_t nr_pages_internal;
 	const bool alloc_from_kthread = !!(current->flags & PF_KTHREAD);
 
-	nr_pages_internal = nr_4k_pages / (1u << (pool->order));
+	nr_pages_internal = nr_small_pages / (1u << (pool->order));
 
-	if (nr_pages_internal * (1u << pool->order) != nr_4k_pages)
+	if (nr_pages_internal * (1u << pool->order) != nr_small_pages)
 		return -EINVAL;
 
-	pool_dbg(pool, "alloc_pages(4k=%zu):\n", nr_4k_pages);
+	pool_dbg(pool, "alloc_pages(small=%zu):\n", nr_small_pages);
 	pool_dbg(pool, "alloc_pages(internal=%zu):\n", nr_pages_internal);
 
 	/* Get pages from this pool */
@@ -747,19 +752,19 @@ int kbase_mem_pool_alloc_pages(struct kbase_mem_pool *pool, size_t nr_4k_pages,
 	}
 	kbase_mem_pool_unlock(pool);
 
-	if (i != nr_4k_pages && pool->next_pool) {
+	if (i != nr_small_pages && pool->next_pool) {
 		/* Allocate via next pool */
-		err = kbase_mem_pool_alloc_pages(pool->next_pool, nr_4k_pages - i, pages + i,
+		err = kbase_mem_pool_alloc_pages(pool->next_pool, nr_small_pages - i, pages + i,
 						 partial_allowed, page_owner);
 
 		if (err < 0)
 			goto err_rollback;
 
-		i += err;
+		i += (size_t)err;
 	} else {
 		/* Get any remaining pages from kernel */
-		while (i != nr_4k_pages) {
-			if (unlikely(!can_alloc_page(pool, page_owner, alloc_from_kthread)))
+		while (i != nr_small_pages) {
+			if (unlikely(!can_alloc_page(pool, page_owner)))
 				goto err_rollback;
 
 			p = kbase_mem_alloc_page(pool);
@@ -798,8 +803,8 @@ err_rollback:
 	return err;
 }
 
-int kbase_mem_pool_alloc_pages_locked(struct kbase_mem_pool *pool,
-		size_t nr_4k_pages, struct tagged_addr *pages)
+int kbase_mem_pool_alloc_pages_locked(struct kbase_mem_pool *pool, size_t nr_small_pages,
+				      struct tagged_addr *pages)
 {
 	struct page *p;
 	size_t i;
@@ -807,14 +812,13 @@ int kbase_mem_pool_alloc_pages_locked(struct kbase_mem_pool *pool,
 
 	lockdep_assert_held(&pool->pool_lock);
 
-	nr_pages_internal = nr_4k_pages / (1u << (pool->order));
+	nr_pages_internal = nr_small_pages / (1u << (pool->order));
 
-	if (nr_pages_internal * (1u << pool->order) != nr_4k_pages)
+	if (nr_pages_internal * (1u << pool->order) != nr_small_pages)
 		return -EINVAL;
 
-	pool_dbg(pool, "alloc_pages_locked(4k=%zu):\n", nr_4k_pages);
-	pool_dbg(pool, "alloc_pages_locked(internal=%zu):\n",
-			nr_pages_internal);
+	pool_dbg(pool, "alloc_pages_locked(small=%zu):\n", nr_small_pages);
+	pool_dbg(pool, "alloc_pages_locked(internal=%zu):\n", nr_pages_internal);
 
 	if (kbase_mem_pool_size(pool) < nr_pages_internal) {
 		pool_dbg(pool, "Failed alloc\n");
@@ -838,7 +842,7 @@ int kbase_mem_pool_alloc_pages_locked(struct kbase_mem_pool *pool,
 		}
 	}
 
-	return nr_4k_pages;
+	return nr_small_pages;
 }
 
 static void kbase_mem_pool_add_array(struct kbase_mem_pool *pool,

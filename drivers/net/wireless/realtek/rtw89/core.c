@@ -1347,13 +1347,10 @@ static void rtw89_core_parse_phy_status_ie01(struct rtw89_dev *rtwdev,
 	phy_ppdu->ofdm.has = true;
 
 	/* sign conversion for S(12,2) */
-	if (rtwdev->chip->cfo_src_fd) {
-		t = le32_get_bits(ie->w1, RTW89_PHY_STS_IE01_W1_FD_CFO);
-		cfo = sign_extend32(t, 11);
-	} else {
-		t = le32_get_bits(ie->w1, RTW89_PHY_STS_IE01_W1_PREMB_CFO);
-		cfo = sign_extend32(t, 11);
-	}
+	if (rtwdev->chip->cfo_src_fd)
+		cfo = sign_extend32(RTW89_GET_PHY_STS_IE01_FD_CFO(addr), 11);
+	else
+		cfo = sign_extend32(RTW89_GET_PHY_STS_IE01_PREMB_CFO(addr), 11);
 
 	rtw89_phy_cfo_parse(rtwdev, cfo, phy_ppdu);
 }
@@ -1417,8 +1414,11 @@ static int rtw89_core_rx_parse_phy_sts(struct rtw89_dev *rtwdev,
 	if (phy_ppdu->ie < RTW89_CCK_PKT)
 		return -EINVAL;
 
-	pos = phy_ppdu->buf + PHY_STS_HDR_LEN;
-	end = phy_ppdu->buf + phy_ppdu->len;
+	if (!phy_ppdu->to_self)
+		return 0;
+
+	pos = (u8 *)phy_ppdu->buf + PHY_STS_HDR_LEN;
+	end = (u8 *)phy_ppdu->buf + phy_ppdu->len;
 	while (pos < end) {
 		const struct rtw89_phy_sts_iehdr *iehdr = pos;
 
@@ -1631,11 +1631,6 @@ static void rtw89_vif_rx_stats_iter(void *data, u8 *mac,
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct rtw89_rx_phy_ppdu *phy_ppdu = iter_data->phy_ppdu;
 	const u8 *bssid = iter_data->bssid;
-
-	if (rtwdev->scanning &&
-	    (ieee80211_is_beacon(hdr->frame_control) ||
-	     ieee80211_is_probe_resp(hdr->frame_control)))
-		rtw89_core_cancel_6ghz_probe_tx(rtwdev, skb);
 
 	if (!vif->bss_conf.bssid)
 		return;
@@ -2708,9 +2703,7 @@ static void rtw89_track_work(struct work_struct *work)
 	rtw89_phy_ra_update(rtwdev);
 	rtw89_phy_cfo_track(rtwdev);
 	rtw89_phy_tx_path_div_track(rtwdev);
-	rtw89_phy_antdiv_track(rtwdev);
 	rtw89_phy_ul_tb_ctrl_track(rtwdev);
-	rtw89_tas_track(rtwdev);
 
 	if (rtwdev->lps_enabled && !rtwdev->btc.lps)
 		rtw89_enter_lps_track(rtwdev);
@@ -2908,21 +2901,6 @@ int rtw89_core_sta_add(struct rtw89_dev *rtwdev,
 							    RTW89_MAX_MAC_ID_NUM);
 		if (rtwsta->mac_id == RTW89_MAX_MAC_ID_NUM)
 			return -ENOSPC;
-
-		ret = rtw89_mac_set_macid_pause(rtwdev, rtwsta->mac_id, false);
-		if (ret) {
-			rtw89_core_release_bit_map(rtwdev->mac_id_map, rtwsta->mac_id);
-			rtw89_warn(rtwdev, "failed to send h2c macid pause\n");
-			return ret;
-		}
-
-		ret = rtw89_fw_h2c_role_maintain(rtwdev, rtwvif, rtwsta,
-						 RTW89_ROLE_CREATE);
-		if (ret) {
-			rtw89_core_release_bit_map(rtwdev->mac_id_map, rtwsta->mac_id);
-			rtw89_warn(rtwdev, "failed to send h2c role info\n");
-			return ret;
-		}
 	}
 
 	return 0;
@@ -3054,14 +3032,8 @@ int rtw89_core_sta_assoc(struct rtw89_dev *rtwdev,
 
 		rtw89_btc_ntfy_role_info(rtwdev, rtwvif, rtwsta,
 					 BTC_ROLE_MSTS_STA_CONN_END);
-		rtw89_core_get_no_ul_ofdma_htc(rtwdev, &rtwsta->htc_template, chan);
+		rtw89_core_get_no_ul_ofdma_htc(rtwdev, &rtwsta->htc_template);
 		rtw89_phy_ul_tb_assoc(rtwdev, rtwvif);
-
-		ret = rtw89_fw_h2c_general_pkt(rtwdev, rtwvif, rtwsta->mac_id);
-		if (ret) {
-			rtw89_warn(rtwdev, "failed to send h2c general packet\n");
-			return ret;
-		}
 	}
 
 	return ret;
@@ -3494,27 +3466,6 @@ void rtw89_complete_cond(struct rtw89_wait_info *wait, unsigned int cond,
 	complete(&wait->completion);
 }
 
-void rtw89_core_ntfy_btc_event(struct rtw89_dev *rtwdev, enum rtw89_btc_hmsg event)
-{
-	u16 bt_req_len;
-
-	switch (event) {
-	case RTW89_BTC_HMSG_SET_BT_REQ_SLOT:
-		bt_req_len = rtw89_coex_query_bt_req_len(rtwdev, RTW89_PHY_0);
-		rtw89_debug(rtwdev, RTW89_DBG_BTC,
-			    "coex updates BT req len to %d TU\n", bt_req_len);
-		break;
-	default:
-		if (event < NUM_OF_RTW89_BTC_HMSG)
-			rtw89_debug(rtwdev, RTW89_DBG_BTC,
-				    "unhandled BTC HMSG event: %d\n", event);
-		else
-			rtw89_warn(rtwdev,
-				   "unrecognized BTC HMSG event: %d\n", event);
-		break;
-	}
-}
-
 int rtw89_core_start(struct rtw89_dev *rtwdev)
 {
 	int ret;
@@ -3623,6 +3574,7 @@ int rtw89_core_init(struct rtw89_dev *rtwdev)
 			continue;
 		INIT_LIST_HEAD(&rtwdev->scan_info.pkt_list[band]);
 	}
+	INIT_LIST_HEAD(&rtwdev->wow.pkt_list);
 	INIT_WORK(&rtwdev->ba_work, rtw89_core_ba_work);
 	INIT_WORK(&rtwdev->txq_work, rtw89_core_txq_work);
 	INIT_DELAYED_WORK(&rtwdev->txq_reinvoke_work, rtw89_core_txq_reinvoke_work);
@@ -3644,7 +3596,6 @@ int rtw89_core_init(struct rtw89_dev *rtwdev)
 	rtwdev->total_sta_assoc = 0;
 
 	rtw89_init_wait(&rtwdev->mcc.wait);
-	rtw89_init_wait(&rtwdev->mac.fw_ofld_wait);
 
 	INIT_WORK(&rtwdev->c2h_work, rtw89_fw_c2h_work);
 	INIT_WORK(&rtwdev->ips_work, rtw89_ips_work);
@@ -3892,8 +3843,6 @@ static int rtw89_core_register_hw(struct rtw89_dev *rtwdev)
 	ieee80211_hw_set(hw, SINGLE_SCAN_ON_ALL_BANDS);
 	ieee80211_hw_set(hw, SUPPORTS_MULTI_BSSID);
 	ieee80211_hw_set(hw, WANT_MONITOR_VIF);
-	if (RTW89_CHK_FW_FEATURE(BEACON_FILTER, &rtwdev->fw))
-		ieee80211_hw_set(hw, CONNECTION_MONITOR);
 
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 				     BIT(NL80211_IFTYPE_AP) |
@@ -3998,7 +3947,6 @@ struct rtw89_dev *rtw89_alloc_ieee80211_hw(struct device *device,
 					   u32 bus_data_size,
 					   const struct rtw89_chip_info *chip)
 {
-	struct rtw89_fw_info early_fw = {};
 	const struct firmware *firmware;
 	struct ieee80211_hw *hw;
 	struct rtw89_dev *rtwdev;
@@ -4007,7 +3955,7 @@ struct rtw89_dev *rtw89_alloc_ieee80211_hw(struct device *device,
 	int fw_format = -1;
 	bool no_chanctx;
 
-	firmware = rtw89_early_fw_feature_recognize(device, chip, &early_fw, &fw_format);
+	firmware = rtw89_early_fw_feature_recognize(device, chip, &early_feat_map);
 
 	ops = kmemdup(&rtw89_ops, sizeof(rtw89_ops), GFP_KERNEL);
 	if (!ops)
@@ -4040,8 +3988,7 @@ struct rtw89_dev *rtw89_alloc_ieee80211_hw(struct device *device,
 	rtwdev->dev = device;
 	rtwdev->ops = ops;
 	rtwdev->chip = chip;
-	rtwdev->fw.req.firmware = firmware;
-	rtwdev->fw.fw_format = fw_format;
+	rtwdev->fw.firmware = firmware;
 
 	rtw89_debug(rtwdev, RTW89_DBG_FW, "probe driver %s chanctx\n",
 		    no_chanctx ? "without" : "with");
@@ -4058,7 +4005,7 @@ EXPORT_SYMBOL(rtw89_alloc_ieee80211_hw);
 void rtw89_free_ieee80211_hw(struct rtw89_dev *rtwdev)
 {
 	kfree(rtwdev->ops);
-	release_firmware(rtwdev->fw.req.firmware);
+	release_firmware(rtwdev->fw.firmware);
 	ieee80211_free_hw(rtwdev->hw);
 }
 EXPORT_SYMBOL(rtw89_free_ieee80211_hw);

@@ -109,7 +109,7 @@ struct kbase_kinstr_prfcnt_sample_array {
  * @scope:        Scope of performance counters to capture.
  * @buffer_count: Number of buffers used to store samples.
  * @period_ns:    Sampling period, in nanoseconds, or 0 if manual mode.
- * @phys_em:      Enable map used by the GPU.
+ * @enable_cm:    Requested counter selection bitmasks.
  */
 struct kbase_kinstr_prfcnt_client_config {
 	u8 prfcnt_mode;
@@ -117,7 +117,7 @@ struct kbase_kinstr_prfcnt_client_config {
 	u8 scope;
 	u16 buffer_count;
 	u64 period_ns;
-	struct kbase_hwcnt_physical_enable_map phys_em;
+	struct kbase_hwcnt_enable_cm enable_cm;
 };
 
 /**
@@ -441,7 +441,7 @@ int kbasep_kinstr_prfcnt_set_block_meta_items(struct kbase_hwcnt_enable_map *ena
 		return -EINVAL;
 
 	metadata = dst->metadata;
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst) {
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
 		u8 *dst_blk;
 
 		/* Block indices must be reported with no gaps. */
@@ -493,7 +493,7 @@ static void kbasep_kinstr_prfcnt_set_sample_metadata(
 	/* PRFCNT_SAMPLE_META_TYPE_SAMPLE must be the first item */
 	ptr_md->hdr.item_type = PRFCNT_SAMPLE_META_TYPE_SAMPLE;
 	ptr_md->hdr.item_version = PRFCNT_READER_API_VERSION;
-	ptr_md->u.sample_md.seq = atomic_read(&cli->write_idx);
+	ptr_md->u.sample_md.seq = (u64)atomic_read(&cli->write_idx);
 	ptr_md->u.sample_md.flags = cli->sample_flags;
 
 	/* Place the PRFCNT_SAMPLE_META_TYPE_CLOCK optionally as the 2nd */
@@ -528,9 +528,9 @@ static void kbasep_kinstr_prfcnt_set_sample_metadata(
  * @ts_start_ns:  Time stamp for the start point of the sample dump.
  * @ts_end_ns:    Time stamp for the end point of the sample dump.
  */
-static void kbasep_kinstr_prfcnt_client_output_sample(
-	struct kbase_kinstr_prfcnt_client *cli, unsigned int buf_idx,
-	u64 user_data, u64 ts_start_ns, u64 ts_end_ns)
+static void kbasep_kinstr_prfcnt_client_output_sample(struct kbase_kinstr_prfcnt_client *cli,
+						      int buf_idx, u64 user_data, u64 ts_start_ns,
+						      u64 ts_end_ns)
 {
 	struct kbase_hwcnt_dump_buffer *dump_buf;
 	struct kbase_hwcnt_dump_buffer *tmp_buf = &cli->tmp_buf;
@@ -578,8 +578,8 @@ static int kbasep_kinstr_prfcnt_client_dump(struct kbase_kinstr_prfcnt_client *c
 	int ret;
 	u64 ts_start_ns = 0;
 	u64 ts_end_ns = 0;
-	unsigned int write_idx;
-	unsigned int read_idx;
+	int write_idx;
+	int read_idx;
 	size_t available_samples_count;
 
 	WARN_ON(!cli);
@@ -596,7 +596,7 @@ static int kbasep_kinstr_prfcnt_client_dump(struct kbase_kinstr_prfcnt_client *c
 	WARN_ON(available_samples_count < 1);
 	/* Reserve one slot to store the implicit sample taken on CMD_STOP */
 	available_samples_count -= 1;
-	if (write_idx - read_idx == available_samples_count) {
+	if ((size_t)(write_idx - read_idx) == available_samples_count) {
 		/* For periodic sampling, the current active dump
 		 * will be accumulated in the next sample, when
 		 * a buffer becomes available.
@@ -637,8 +637,8 @@ kbasep_kinstr_prfcnt_client_start(struct kbase_kinstr_prfcnt_client *cli,
 {
 	int ret;
 	u64 tm_start, tm_end;
-	unsigned int write_idx;
-	unsigned int read_idx;
+	int write_idx;
+	int read_idx;
 	size_t available_samples_count;
 
 	WARN_ON(!cli);
@@ -654,12 +654,11 @@ kbasep_kinstr_prfcnt_client_start(struct kbase_kinstr_prfcnt_client *cli,
 	/* Check whether there is space to store atleast an implicit sample
 	 * corresponding to CMD_STOP.
 	 */
-	available_samples_count = cli->sample_count - (write_idx - read_idx);
+	available_samples_count = cli->sample_count - (size_t)(write_idx - read_idx);
 	if (!available_samples_count)
 		return -EBUSY;
 
-	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map,
-						 &cli->config.phys_em);
+	kbase_hwcnt_gpu_enable_map_from_cm(&cli->enable_map, &cli->config.enable_cm);
 
 	/* Enable all the available clk_enable_map. */
 	cli->enable_map.clk_enable_map = (1ull << cli->kinstr_ctx->metadata->clk_cnt) - 1;
@@ -690,10 +689,9 @@ kbasep_kinstr_prfcnt_client_stop(struct kbase_kinstr_prfcnt_client *cli,
 	int ret;
 	u64 tm_start = 0;
 	u64 tm_end = 0;
-	struct kbase_hwcnt_physical_enable_map phys_em;
 	size_t available_samples_count;
-	unsigned int write_idx;
-	unsigned int read_idx;
+	int write_idx;
+	int read_idx;
 
 	WARN_ON(!cli);
 	lockdep_assert_held(&cli->cmd_sync_lock);
@@ -704,21 +702,14 @@ kbasep_kinstr_prfcnt_client_stop(struct kbase_kinstr_prfcnt_client *cli,
 
 	mutex_lock(&cli->kinstr_ctx->lock);
 
-	/* Disable counters under the lock, so we do not race with the
-	 * sampling thread.
-	 */
-	phys_em.fe_bm = 0;
-	phys_em.tiler_bm = 0;
-	phys_em.mmu_l2_bm = 0;
-	phys_em.shader_bm = 0;
-
-	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map, &phys_em);
+	/* Set enable map to 0 */
+	kbase_hwcnt_gpu_enable_map_from_cm(&cli->enable_map, &(struct kbase_hwcnt_enable_cm){});
 
 	/* Check whether one has the buffer to hold the last sample */
 	write_idx = atomic_read(&cli->write_idx);
 	read_idx = atomic_read(&cli->read_idx);
 
-	available_samples_count = cli->sample_count - (write_idx - read_idx);
+	available_samples_count = cli->sample_count - (size_t)(write_idx - read_idx);
 
 	ret = kbase_hwcnt_virtualizer_client_set_counters(cli->hvcli,
 							  &cli->enable_map,
@@ -732,8 +723,7 @@ kbasep_kinstr_prfcnt_client_stop(struct kbase_kinstr_prfcnt_client *cli,
 	if (!WARN_ON(!available_samples_count)) {
 		write_idx %= cli->sample_arr.sample_count;
 		/* Handle the last stop sample */
-		kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map,
-							 &cli->config.phys_em);
+		kbase_hwcnt_gpu_enable_map_from_cm(&cli->enable_map, &cli->config.enable_cm);
 		/* As this is a stop sample, mark it as MANUAL */
 		kbasep_kinstr_prfcnt_client_output_sample(
 			cli, write_idx, user_data, tm_start, tm_end);
@@ -778,7 +768,7 @@ kbasep_kinstr_prfcnt_client_sync_dump(struct kbase_kinstr_prfcnt_client *cli,
 static int
 kbasep_kinstr_prfcnt_client_discard(struct kbase_kinstr_prfcnt_client *cli)
 {
-	unsigned int write_idx;
+	int write_idx;
 
 	WARN_ON(!cli);
 	lockdep_assert_held(&cli->cmd_sync_lock);
@@ -842,9 +832,9 @@ static int
 kbasep_kinstr_prfcnt_get_sample(struct kbase_kinstr_prfcnt_client *cli,
 				struct prfcnt_sample_access *sample_access)
 {
-	unsigned int write_idx;
-	unsigned int read_idx;
-	unsigned int fetch_idx;
+	int write_idx;
+	int read_idx;
+	int fetch_idx;
 	u64 sample_offset_bytes;
 	struct prfcnt_metadata *sample_meta;
 	int err = 0;
@@ -877,7 +867,7 @@ kbasep_kinstr_prfcnt_get_sample(struct kbase_kinstr_prfcnt_client *cli,
 
 	read_idx %= cli->sample_arr.sample_count;
 	sample_meta = cli->sample_arr.samples[read_idx].sample_meta;
-	sample_offset_bytes = (u8 *)sample_meta - cli->sample_arr.user_buf;
+	sample_offset_bytes = (u64)((u8 *)sample_meta - cli->sample_arr.user_buf);
 
 	sample_access->sequence = sample_meta->u.sample_md.seq;
 	sample_access->sample_offset_bytes = sample_offset_bytes;
@@ -894,9 +884,9 @@ static int
 kbasep_kinstr_prfcnt_put_sample(struct kbase_kinstr_prfcnt_client *cli,
 				struct prfcnt_sample_access *sample_access)
 {
-	unsigned int write_idx;
-	unsigned int read_idx;
-	unsigned int fetch_idx;
+	int write_idx;
+	int read_idx;
+	int fetch_idx;
 	u64 sample_offset_bytes;
 	int err = 0;
 
@@ -910,8 +900,8 @@ kbasep_kinstr_prfcnt_put_sample(struct kbase_kinstr_prfcnt_client *cli,
 	}
 
 	read_idx %= cli->sample_arr.sample_count;
-	sample_offset_bytes =
-		(u8 *)cli->sample_arr.samples[read_idx].sample_meta - cli->sample_arr.user_buf;
+	sample_offset_bytes = (u64)((u8 *)cli->sample_arr.samples[read_idx].sample_meta -
+				    cli->sample_arr.user_buf);
 
 	if (sample_access->sample_offset_bytes != sample_offset_bytes) {
 		err = -EINVAL;
@@ -1110,7 +1100,7 @@ size_t kbasep_kinstr_prfcnt_get_sample_md_count(const struct kbase_hwcnt_metadat
 	if (!metadata)
 		return 0;
 
-	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst) {
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
 		/* Skip unavailable, non-enabled or reserved blocks */
 		if (kbase_kinstr_is_block_type_reserved(metadata, grp, blk) ||
 		    !kbase_hwcnt_metadata_block_instance_avail(metadata, grp, blk, blk_inst) ||
@@ -1387,8 +1377,29 @@ static void
 kbasep_kinstr_prfcnt_block_enable_to_physical(uint32_t *phys_em,
 					      const uint64_t *enable_mask)
 {
-	*phys_em |= kbase_hwcnt_backend_gpu_block_map_to_physical(
-		enable_mask[0], enable_mask[1]);
+	size_t blk, blk_inst;
+
+	kbase_hwcnt_metadata_for_each_block(metadata, blk, blk_inst) {
+		const enum kbase_hwcnt_gpu_v5_block_type blk_type =
+			kbase_hwcnt_metadata_block_type(metadata, blk);
+		const enum prfcnt_block_type prfcnt_block_type =
+			kbase_hwcnt_metadata_block_type_to_prfcnt_block_type(blk_type);
+
+		if (prfcnt_block_type == req_enable->block_type)
+			return true;
+	}
+	return false;
+}
+
+static void kbasep_kinstr_prfcnt_block_enable_req_to_cfg(uint64_t *cfg_cm,
+							 const uint64_t *enable_mask)
+{
+	/* Adding a baseline value '0xF' to cfg_cm on any type that has been requested. This
+	 * ensures the block states will always be reflected in the client's
+	 * sample outputs, even when the client provided an all zero value mask.
+	 */
+	cfg_cm[0] |= (0xF | enable_mask[0]);
+	cfg_cm[1] |= enable_mask[1];
 }
 
 /**
@@ -1466,20 +1477,28 @@ static int kbasep_kinstr_prfcnt_parse_request_enable(
 	 */
 	switch (req_enable->block_type) {
 	case PRFCNT_BLOCK_TYPE_FE:
-		kbasep_kinstr_prfcnt_block_enable_to_physical(
-			&config->phys_em.fe_bm, req_enable->enable_mask);
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.fe_bm,
+							     req_enable->enable_mask);
 		break;
 	case PRFCNT_BLOCK_TYPE_TILER:
-		kbasep_kinstr_prfcnt_block_enable_to_physical(
-			&config->phys_em.tiler_bm, req_enable->enable_mask);
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.tiler_bm,
+							     req_enable->enable_mask);
 		break;
 	case PRFCNT_BLOCK_TYPE_MEMORY:
-		kbasep_kinstr_prfcnt_block_enable_to_physical(
-			&config->phys_em.mmu_l2_bm, req_enable->enable_mask);
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.mmu_l2_bm,
+							     req_enable->enable_mask);
 		break;
 	case PRFCNT_BLOCK_TYPE_SHADER_CORE:
-		kbasep_kinstr_prfcnt_block_enable_to_physical(
-			&config->phys_em.shader_bm, req_enable->enable_mask);
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.shader_bm,
+							     req_enable->enable_mask);
+		break;
+	case PRFCNT_BLOCK_TYPE_FW:
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.fw_bm,
+							     req_enable->enable_mask);
+		break;
+	case PRFCNT_BLOCK_TYPE_CSG:
+		kbasep_kinstr_prfcnt_block_enable_req_to_cfg(config->enable_cm.csg_bm,
+							     req_enable->enable_mask);
 		break;
 	default:
 		err = -EINVAL;
@@ -1676,8 +1695,8 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 			break;
 
 		case KINSTR_PRFCNT_DUMP_BUFFER:
-			kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map,
-								 &cli->config.phys_em);
+			kbase_hwcnt_gpu_enable_map_from_cm(&cli->enable_map,
+							   &cli->config.enable_cm);
 
 			cli->sample_count = cli->config.buffer_count;
 			cli->sample_size =
@@ -1704,8 +1723,8 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 			/* Set enable map to be 0 to prevent virtualizer to init and kick the
 			 * backend to count.
 			 */
-			kbase_hwcnt_gpu_enable_map_from_physical(
-				&cli->enable_map, &(struct kbase_hwcnt_physical_enable_map){ 0 });
+			kbase_hwcnt_gpu_enable_map_from_cm(&cli->enable_map,
+							   &(struct kbase_hwcnt_enable_cm){});
 
 			err = kbase_hwcnt_virtualizer_client_create(kinstr_ctx->hvirt,
 								    &cli->enable_map, &cli->hvcli);
