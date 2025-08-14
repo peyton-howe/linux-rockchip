@@ -1,4 +1,10 @@
-linux-rockchip (6.1.0-1027.27) noble; urgency=medium
+linux-rockchip (6.1.0-1028.28) noble; urgency=medium
+
+  * Merge latest kernel changes from armbian (vendor kernel v6.1.115)
+
+ -- Peyton Howe <peyton.howe@bellsouth.net>  Thu, 14 Aug 2025 02:45:00 -0400
+
+inux-rockchip (6.1.0-1027.27) noble; urgency=medium
 
   * UBUNTU: Enable PPS line discipline
   * add rk3588-spi0-m2-cs0-mcp2515-8mhz overlay
