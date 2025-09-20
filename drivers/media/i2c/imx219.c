@@ -26,7 +26,7 @@
 #include <media/v4l2-image-sizes.h>
 #include <media/v4l2-mediabus.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x1)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x3)
 
 /* IMX219 supported geometry */
 #define IMX219_TABLE_END		0xffff
@@ -34,6 +34,10 @@
 #define IMX219_ANALOGUE_GAIN_MIN	(1 * IMX219_ANALOGUE_GAIN_MULTIPLIER)
 #define IMX219_ANALOGUE_GAIN_MAX	(11 * IMX219_ANALOGUE_GAIN_MULTIPLIER)
 #define IMX219_ANALOGUE_GAIN_DEFAULT	(2 * IMX219_ANALOGUE_GAIN_MULTIPLIER)
+
+#define IMX219_PIXEL_RATE 281600000
+#define IMX219_VBLANK_MIN 32
+#define IMX219_VTS_MAX 0xffff
 
 /* In dB*256 */
 #define IMX219_DIGITAL_GAIN_MIN		256
@@ -47,10 +51,10 @@
 #define IMX219_EXP_LINES_MARGIN	4
 
 #define IMX219_NAME			"imx219"
-#define IMX219_LANES  			2
+#define IMX219_LANES  			4
 
 static const s64 link_freq_menu_items[] = {
-	456000000,
+	364000000,
 };
 
 struct imx219_reg {
@@ -75,7 +79,7 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{0x300B, 0xFF},		/* Access Code for address over 0x3000 */
 	{0x30EB, 0x05},		/* Access Code for address over 0x3000 */
 	{0x30EB, 0x09},		/* Access Code for address over 0x3000 */
-	{0x0114, 0x01},		/* CSI_LANE_MODE[1:0} */
+	{0x0114, 0x03},		/* CSI_LANE_MODE[1:0} */
 	{0x0128, 0x00},		/* DPHY_CNTRL */
 	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
 	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
@@ -172,6 +176,142 @@ static const struct imx219_reg imx219_init_tab_1920_1080_30fps[] = {
 	{IMX219_TABLE_END, 0x00}
 };
 
+// static const struct imx219_reg mode_1640_1232_regs[] = {
+// 	{0x0100, 0x00},
+// 	{0x30eb, 0x05},
+// 	{0x30eb, 0x0c},
+// 	{0x300a, 0xff},
+// 	{0x300b, 0xff},
+// 	{0x30eb, 0x05},
+// 	{0x30eb, 0x09},
+// 	{0x0114, 0x01},
+// 	{0x0128, 0x00},
+// 	{0x012a, 0x18},
+// 	{0x012b, 0x00},
+// 	{0x0160, 0x06},
+// 	{0x0161, 0xe6},
+// 	{0x0162, 0x0d},
+// 	{0x0163, 0x78},
+// 	{0x0164, 0x00},
+// 	{0x0165, 0x00},
+// 	{0x0166, 0x0c},
+// 	{0x0167, 0xcf},
+// 	{0x0168, 0x00},
+// 	{0x0169, 0x00},
+// 	{0x016a, 0x09},
+// 	{0x016b, 0x9f},
+// 	{0x016c, 0x06},
+// 	{0x016d, 0x68},
+// 	{0x016e, 0x04},
+// 	{0x016f, 0xd0},
+// 	{0x0170, 0x01},
+// 	{0x0171, 0x01},
+// 	{0x0172, 0x00},
+// 	{0x0174, 0x01},
+// 	{0x0175, 0x01},
+// 	{0x0176, 0x01},
+// 	{0x0177, 0x01},
+// 	{0x018C, 0x0a},
+// 	{0x018D, 0x0a},
+// 	{0x0301, 0x05},
+// 	{0x0303, 0x01},
+// 	{0x0304, 0x03},
+// 	{0x0305, 0x03},
+// 	{0x0306, 0x00},
+// 	{0x0307, 0x39},
+// 	{0x0309, 0x0a},
+// 	{0x030b, 0x01},
+// 	{0x030c, 0x00},
+// 	{0x030d, 0x72},
+// 	{0x0624, 0x06},
+// 	{0x0625, 0x68},
+// 	{0x0626, 0x04},
+// 	{0x0627, 0xd0},
+// 	{0x455e, 0x00},
+// 	{0x471e, 0x4b},
+// 	{0x4767, 0x0f},
+// 	{0x4750, 0x14},
+// 	{0x4540, 0x00},
+// 	{0x47b4, 0x14},
+// 	{0x4713, 0x30},
+// 	{0x478b, 0x10},
+// 	{0x478f, 0x10},
+// 	{0x4793, 0x10},
+// 	{0x4797, 0x0e},
+// 	{0x479b, 0x0e},
+// 	{0x0162, 0x0d},
+// 	{0x0163, 0x78},
+// 	{IMX219_TABLE_END, 0x00},
+// };
+
+// static const struct imx219_reg mode_640_480_regs[] = {
+// 	{0x0100, 0x00},
+// 	{0x30eb, 0x05},
+// 	{0x30eb, 0x0c},
+// 	{0x300a, 0xff},
+// 	{0x300b, 0xff},
+// 	{0x30eb, 0x05},
+// 	{0x30eb, 0x09},
+// 	{0x0114, 0x01},
+// 	{0x0128, 0x00},
+// 	{0x012a, 0x18},
+// 	{0x012b, 0x00},
+// 	{0x0160, 0x06},
+// 	{0x0161, 0xe6},
+// 	{0x0162, 0x0d},
+// 	{0x0163, 0x78},
+// 	{0x0164, 0x03},
+// 	{0x0165, 0xe8},
+// 	{0x0166, 0x08},
+// 	{0x0167, 0xe7},
+// 	{0x0168, 0x02},
+// 	{0x0169, 0xf0},
+// 	{0x016a, 0x06},
+// 	{0x016b, 0xaf},
+// 	{0x016c, 0x02},
+// 	{0x016d, 0x80},
+// 	{0x016e, 0x01},
+// 	{0x016f, 0xe0},
+// 	{0x0170, 0x01},
+// 	{0x0171, 0x01},
+// 	{0x0172, 0x00},
+// 	{0x0174, 0x00},
+// 	{0x0175, 0x00},
+// 	{0x0176, 0x01},
+// 	{0x0177, 0x01},
+// 	{0x018C, 0x0a},
+// 	{0x018D, 0x0a},
+// 	{0x0301, 0x05},
+// 	{0x0303, 0x01},
+// 	{0x0304, 0x03},
+// 	{0x0305, 0x03},
+// 	{0x0306, 0x00},
+// 	{0x0307, 0x39},
+// 	{0x0309, 0x0a},
+// 	{0x030b, 0x01},
+// 	{0x030c, 0x00},
+// 	{0x030d, 0x72},
+// 	{0x0624, 0x06},
+// 	{0x0625, 0x68},
+// 	{0x0626, 0x04},
+// 	{0x0627, 0xd0},
+// 	{0x455e, 0x00},
+// 	{0x471e, 0x4b},
+// 	{0x4767, 0x0f},
+// 	{0x4750, 0x14},
+// 	{0x4540, 0x00},
+// 	{0x47b4, 0x14},
+// 	{0x4713, 0x30},
+// 	{0x478b, 0x10},
+// 	{0x478f, 0x10},
+// 	{0x4793, 0x10},
+// 	{0x4797, 0x0e},
+// 	{0x479b, 0x0e},
+// 	{0x0162, 0x0d},
+// 	{0x0163, 0x78},
+// 	{IMX219_TABLE_END, 0x00},
+// };
+
 static const struct imx219_reg start[] = {
 	{0x0100, 0x01},		/* mode select streaming on */
 	{IMX219_TABLE_END, 0x00}
@@ -255,7 +395,7 @@ static const struct imx219_mode supported_modes[] = {
 			.numerator = 10000,
 			.denominator = 300000,
 		},
-		.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
+		.hts_def = 0x0d78,
 		.vts_def = 0x06E6,
 		.reg_list = imx219_init_tab_1920_1080_30fps,
 	},
@@ -264,12 +404,35 @@ static const struct imx219_mode supported_modes[] = {
 		.height = 2464,
 		.max_fps = {
 			.numerator = 10000,
-			.denominator = 210000,
+			.denominator = 300000,
 		},
-		.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
-		.vts_def = 0x09c4,
+		.hts_def = 3448,
+		.vts_def = 3526,
 		.reg_list = imx219_init_tab_3280_2464_21fps,
 	},
+	// {
+	// 	/* 2x2 binned 30fps mode */
+	// 	.width = 1640,
+	// 	.height = 1232,
+	// 	.max_fps = {
+	// 		.numerator = 10000,
+	// 		.denominator = 300000,
+	// 	},
+	// 	.vts_def = 0x06e3,
+	// 	.reg_list = mode_1640_1232_regs,
+	// },
+	// {
+	// 	/* 640x480 30fps mode */
+	// 	.width = 640,
+	// 	.height = 480,
+	// 	.max_fps = {
+	// 		.numerator = 10000,
+	// 		.denominator = 300000,
+	// 	},
+	// 	.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
+	// 	.vts_def = 0x0437,
+	// 	.reg_list = mode_640_480_regs,
+	// }
 };
 
 static struct imx219 *to_imx219(const struct i2c_client *client)
@@ -677,6 +840,7 @@ static int imx219_set_fmt(struct v4l2_subdev *sd,
 	struct imx219 *priv = to_imx219(client);
 	const struct imx219_mode *mode;
 	s64 h_blank, v_blank, pixel_rate;
+	// s64 h_blank, v_blank;
 	u32 fps = 0;
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
@@ -949,6 +1113,7 @@ static int imx219_ctrls_init(struct v4l2_subdev *sd)
 	struct imx219 *priv = to_imx219(client);
 	const struct imx219_mode *mode = priv->cur_mode;
 	s64 pixel_rate, h_blank, v_blank;
+	// s64 h_blank, v_blank;
 	int ret;
 	u32 fps = 0;
 
@@ -1062,7 +1227,7 @@ static int imx219_probe(struct i2c_client *client,
 		return -EPROBE_DEFER;
 	}
 
-	/* 1920 * 1080 by default */
+	/* 3280 * 2464 by default */
 	priv->cur_mode = &supported_modes[1];
 	priv->cfg_num = ARRAY_SIZE(supported_modes);
 

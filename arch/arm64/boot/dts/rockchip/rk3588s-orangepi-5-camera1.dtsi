@@ -182,7 +182,7 @@
 		port {
 			imx219_out2: endpoint {
 				remote-endpoint = <&mipi_in_ucam3>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
 			};
 		};
 	};
@@ -216,7 +216,8 @@
 		port {
 			imx708_out2: endpoint {
 				remote-endpoint = <&mipi_in_ucam4>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <750000000>;
 			};
 		};
 	};
