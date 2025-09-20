@@ -210,10 +210,13 @@
 		clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
 		clock-names = "xclk";
 		assigned-clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
-        	assigned-clock-rates = <24000000>;
+        assigned-clock-rates = <24000000>;
 		power-domains = <&power RK3588_PD_VI>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&mipim0_camera4_clk>;
+		rockchip,grf = <&sys_grf>;
+		reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
 		rockchip,camera-module-index = <0>;
 		rockchip,camera-module-facing = "back";
 		rockchip,camera-module-name = "rpi-camera-v3";
@@ -222,7 +225,8 @@
 		port {
 			imx708_out: endpoint {
 				remote-endpoint = <&mipi_in_cam4>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <750000000>;
 			};
 		};
 	};
