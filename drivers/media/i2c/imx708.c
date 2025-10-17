@@ -976,6 +976,8 @@ struct imx708 {
 
 	unsigned int link_freq_idx;
 
+	u64 link_freq_value;
+
 	/* Two or Four lanes */
 	u8 lanes;
 };
@@ -1259,9 +1261,6 @@ static int imx708_configure_link_frequency(struct imx708 *imx708)
 {	
 	u16 link_freq_reg_value;
 	int ret = 0;
-	s64 link_freq;
-
-	link_freq = imx708->link_freq;
 
 	// if (link_freqs[imx708->link_freq_idx] > 750000000) {
 	// 	link_freq_reg_value = 4 * link_freqs[imx708->link_freq_idx] * 3 / (1000000 * IMX708_EXCLK_FREQ);
@@ -1276,15 +1275,15 @@ static int imx708_configure_link_frequency(struct imx708 *imx708)
 	// };
 	struct i2c_client *client = v4l2_get_subdevdata(&imx708->subdev);
 	
-	if (link_freq > 765000000) {
+	if (imx708->link_freq_value > 765000000) {
 		dev_info(&client->dev, "Setting 0x030D to %hhu\n", 3);
-		link_freq_reg_value = 4 * link_freq * 3 / (1000000 * IMX708_EXCLK_FREQ);
+		link_freq_reg_value = 4 * imx708->link_freq_value * 3 / (1000000 * IMX708_EXCLK_FREQ);
 		ret = imx708_write_reg(imx708, IMX708_REG_IOP_PREPLLCK_DIV, IMX708_REG_VALUE_08BIT, 0x03);
 		if (ret)
 			return ret;
 	} else {
 		dev_info(&client->dev, "Setting 0x030D to %hhu\n", 4);
-		link_freq_reg_value = 4 * link_freq * 4 / (1000000 * IMX708_EXCLK_FREQ);
+		link_freq_reg_value = 4 * imx708->link_freq_value * 4 / (1000000 * IMX708_EXCLK_FREQ);
 		ret = imx708_write_reg(imx708, IMX708_REG_IOP_PREPLLCK_DIV, IMX708_REG_VALUE_08BIT, 0x04);
 		if (ret)
 			return ret;
@@ -2001,9 +2000,6 @@ static int imx708_init_controls(struct imx708 *imx708)
 	unsigned int i;
 	int ret;
 
-	s64 link_freq;
-	link_freq = &imx708->link_freq;
-
 	ctrl_hdlr = &imx708->ctrl_handler;
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
 	if (ret)
@@ -2021,7 +2017,7 @@ static int imx708_init_controls(struct imx708 *imx708)
 
 	ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &imx708_ctrl_ops,
 				      V4L2_CID_LINK_FREQ, 0, 0,
-				      link_freq);
+				      &imx708->link_freq_value);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -2154,7 +2150,7 @@ static int imx708_check_hwcfg(struct device *dev, struct imx708 *imx708)
 	// 		ret = -EINVAL;
 	// 		goto error_out;
 	// }
-	imx708->link_freq = ep_cfg.link_frequencies[0];
+	imx708->link_freq_value = ep_cfg.link_frequencies[0];
 
 	ret = 0;
 
