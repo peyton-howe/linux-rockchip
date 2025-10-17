@@ -182,7 +182,7 @@
 		port {
 			imx219_out1: endpoint {
 				remote-endpoint = <&mipi_in_dcphy3>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
 			};
 		};
 	};
