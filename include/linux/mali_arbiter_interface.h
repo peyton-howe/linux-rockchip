@@ -144,15 +144,14 @@ struct arbiter_if_arb_vm_ops {
  * (via arbiter_if_arb_vm_ops above) in the context of these callbacks.
  */
 struct arbiter_if_vm_arb_ops {
-	int (*vm_arb_register_dev)(struct arbiter_if_dev *arbif_dev,
-		struct device *dev, struct arbiter_if_arb_vm_ops *ops);
+	int (*vm_arb_register_dev)(struct arbiter_if_dev *arbif_dev, struct device *dev,
+				   struct arbiter_if_arb_vm_ops *ops);
 	void (*vm_arb_unregister_dev)(struct arbiter_if_dev *arbif_dev);
 	void (*vm_arb_get_max_config)(struct arbiter_if_dev *arbif_dev);
 	void (*vm_arb_gpu_request)(struct arbiter_if_dev *arbif_dev);
 	void (*vm_arb_gpu_active)(struct arbiter_if_dev *arbif_dev);
 	void (*vm_arb_gpu_idle)(struct arbiter_if_dev *arbif_dev);
-	void (*vm_arb_gpu_stopped)(struct arbiter_if_dev *arbif_dev,
-		u8 gpu_required);
+	void (*vm_arb_gpu_stopped)(struct arbiter_if_dev *arbif_dev, u8 gpu_required);
 };
 
 /**

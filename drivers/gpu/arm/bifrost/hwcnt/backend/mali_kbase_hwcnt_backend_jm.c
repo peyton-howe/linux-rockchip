@@ -151,7 +151,7 @@ struct kbase_hwcnt_backend_jm {
 static int kbasep_hwcnt_backend_jm_gpu_info_init(struct kbase_device *kbdev,
 						 struct kbase_hwcnt_gpu_info *info)
 {
-	size_t clk;
+	size_t clk, l2_count, core_mask;
 
 	if (!kbdev || !info)
 		return -EINVAL;
@@ -167,17 +167,6 @@ static int kbasep_hwcnt_backend_jm_gpu_info_init(struct kbase_device *kbdev,
 	info->l2_count = l2_count;
 	info->sc_core_mask = core_mask;
 	info->prfcnt_values_per_block = KBASE_HWCNT_V5_DEFAULT_VALUES_PER_BLOCK;
-#else /* CONFIG_MALI_BIFROST_NO_MALI */
-	{
-		const struct base_gpu_props *props = &kbdev->gpu_props.props;
-		const size_t l2_count = props->l2_props.num_l2_slices;
-		const size_t core_mask = props->coherency_info.group[0].core_mask;
-
-		info->l2_count = l2_count;
-		info->core_mask = core_mask;
-		info->prfcnt_values_per_block = KBASE_HWCNT_V5_DEFAULT_VALUES_PER_BLOCK;
-	}
-#endif /* CONFIG_MALI_BIFROST_NO_MALI */
 
 	/* Determine the number of available clock domains. */
 	for (clk = 0; clk < BASE_MAX_NR_CLOCKS_REGULATORS; clk++) {
@@ -425,6 +414,17 @@ kbasep_hwcnt_backend_jm_dump_enable_nolock(struct kbase_hwcnt_backend *backend,
 	backend_jm->pm_core_mask = kbase_pm_ca_get_instr_core_mask(kbdev);
 
 	backend_jm->enabled = true;
+	/* Enabling counters is an indication that the power may have previously been off for all
+	 * blocks.
+	 *
+	 * In any case, the counters would not have been counting recently, so an 'off' block state
+	 * is an approximation for this.
+	 *
+	 * This will be transferred to the dump only after a dump_wait(), or dump_disable() in
+	 * cases where the caller requested such information. This is to handle when a
+	 * dump_enable() happens in between dump_wait() and dump_get().
+	 */
+	kbase_hwcnt_block_state_append(&backend_jm->accum_all_blk_stt, KBASE_HWCNT_STATE_OFF);
 
 	kbasep_hwcnt_backend_jm_cc_enable(backend_jm, enable_map, timestamp_ns);
 
@@ -457,18 +457,62 @@ static int kbasep_hwcnt_backend_jm_dump_enable(struct kbase_hwcnt_backend *backe
 }
 
 /* JM backend implementation of kbase_hwcnt_backend_dump_disable_fn */
-static void kbasep_hwcnt_backend_jm_dump_disable(struct kbase_hwcnt_backend *backend)
+static void kbasep_hwcnt_backend_jm_dump_disable(struct kbase_hwcnt_backend *backend,
+						 struct kbase_hwcnt_dump_buffer *dump_buffer,
+						 const struct kbase_hwcnt_enable_map *enable_map)
 {
 	int errcode;
 	struct kbase_hwcnt_backend_jm *backend_jm = (struct kbase_hwcnt_backend_jm *)backend;
 
-	if (WARN_ON(!backend_jm) || !backend_jm->enabled)
+	if (WARN_ON(!backend_jm ||
+		    (dump_buffer && (backend_jm->info->metadata != dump_buffer->metadata)) ||
+		    (enable_map && (backend_jm->info->metadata != enable_map->metadata)) ||
+		    (dump_buffer && !enable_map)))
+		return;
+	/* No WARN needed here, but still return early if backend is already disabled */
+	if (!backend_jm->enabled)
 		return;
 
 	kbasep_hwcnt_backend_jm_cc_disable(backend_jm);
 
 	errcode = kbase_instr_hwcnt_disable_internal(backend_jm->kctx);
 	WARN_ON(errcode);
+
+	/* Disabling HWCNT is an indication that blocks have been powered off. This is important to
+	 * know for L2 and Tiler blocks, as this is currently the only way a backend can know if
+	 * they are being powered off.
+	 *
+	 * In any case, even if they weren't really powered off, we won't be counting whilst
+	 * disabled.
+	 *
+	 * Update the block state information in the block state accumulator to show this, so that
+	 * in the next dump blocks will have been seen as powered off for some of the time.
+	 */
+	kbase_hwcnt_block_state_append(&backend_jm->accum_all_blk_stt, KBASE_HWCNT_STATE_OFF);
+
+	if (dump_buffer) {
+		/* In some use-cases, the caller will need the information whilst the counters are
+		 * disabled, but will not be able to call into the backend to dump them. Instead,
+		 * they have an opportunity here to request them to be accumulated into their
+		 * buffer immediately.
+		 *
+		 * This consists of taking a sample of the accumulated block state (as though a
+		 * real dump_get() had happened), then transfer ownership of that to the caller
+		 * (i.e. erasing our copy of it).
+		 */
+		kbase_hwcnt_block_state_accumulate(&backend_jm->sampled_all_blk_stt,
+						   &backend_jm->accum_all_blk_stt);
+		kbase_hwcnt_dump_buffer_block_state_update(dump_buffer, enable_map,
+							   backend_jm->sampled_all_blk_stt);
+		/* Now the block state has been passed out into the caller's own accumulation
+		 * buffer, clear our own accumulated and sampled block state - ownership has been
+		 * transferred.
+		 */
+		kbase_hwcnt_block_state_set(&backend_jm->sampled_all_blk_stt,
+					    KBASE_HWCNT_STATE_UNKNOWN);
+		kbase_hwcnt_block_state_set(&backend_jm->accum_all_blk_stt,
+					    KBASE_HWCNT_STATE_UNKNOWN);
+	}
 
 	backend_jm->enabled = false;
 }
@@ -540,12 +584,27 @@ static int kbasep_hwcnt_backend_jm_dump_request(struct kbase_hwcnt_backend *back
 /* JM backend implementation of kbase_hwcnt_backend_dump_wait_fn */
 static int kbasep_hwcnt_backend_jm_dump_wait(struct kbase_hwcnt_backend *backend)
 {
+	int errcode;
 	struct kbase_hwcnt_backend_jm *backend_jm = (struct kbase_hwcnt_backend_jm *)backend;
 
 	if (!backend_jm || !backend_jm->enabled)
 		return -EINVAL;
 
-	return kbase_instr_hwcnt_wait_for_dump(backend_jm->kctx);
+	errcode = kbase_instr_hwcnt_wait_for_dump(backend_jm->kctx);
+	if (errcode)
+		return errcode;
+
+	/* Now that we've completed a sample, also sample+clear the accumulated block state.
+	 *
+	 * This is to ensure that a dump_enable() that happens in between dump_wait() and
+	 * dump_get() is reported on the _next_ dump, not the _current_ dump. That is, the block
+	 * state is reported at the actual time that counters are being sampled.
+	 */
+	kbase_hwcnt_block_state_accumulate(&backend_jm->sampled_all_blk_stt,
+					   &backend_jm->accum_all_blk_stt);
+	kbase_hwcnt_block_state_set(&backend_jm->accum_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
+
+	return errcode;
 }
 
 /* JM backend implementation of kbase_hwcnt_backend_dump_get_fn */
@@ -559,8 +618,8 @@ static int kbasep_hwcnt_backend_jm_dump_get(struct kbase_hwcnt_backend *backend,
 #if IS_ENABLED(CONFIG_MALI_BIFROST_NO_MALI)
 	struct kbase_device *kbdev;
 	unsigned long flags;
-	int errcode;
 #endif /* CONFIG_MALI_BIFROST_NO_MALI */
+	int errcode;
 
 	if (!backend_jm || !dst || !dst_enable_map ||
 	    (backend_jm->info->metadata != dst->metadata) ||
@@ -739,6 +798,8 @@ static int kbasep_hwcnt_backend_jm_create(const struct kbase_hwcnt_backend_jm_in
 
 	kbase_ccswe_init(&backend->ccswe_shader_cores);
 	backend->rate_listener.notify = kbasep_hwcnt_backend_jm_on_freq_change;
+	kbase_hwcnt_block_state_set(&backend->accum_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
+	kbase_hwcnt_block_state_set(&backend->sampled_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
 
 	*out_backend = backend;
 	return 0;
@@ -786,7 +847,7 @@ static void kbasep_hwcnt_backend_jm_term(struct kbase_hwcnt_backend *backend)
 	if (!backend)
 		return;
 
-	kbasep_hwcnt_backend_jm_dump_disable(backend);
+	kbasep_hwcnt_backend_jm_dump_disable(backend, NULL, NULL);
 	kbasep_hwcnt_backend_jm_destroy((struct kbase_hwcnt_backend_jm *)backend);
 }
 

@@ -65,5 +65,6 @@ config MALI_KUTF_MGM_INTEGRATION_TEST
 	    - mali_kutf_mgm_integration_test.ko
 
 
+
 comment "Enable MALI_BIFROST_DEBUG for KUTF modules support"
 	depends on MALI_BIFROST && !MALI_BIFROST_DEBUG && MALI_KUTF

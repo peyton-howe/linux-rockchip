@@ -30,8 +30,8 @@
 
 struct kbase_device;
 
-#define PM_ENABLE_IRQS       0x01
-#define PM_HW_ISSUES_DETECT  0x02
+#define PM_ENABLE_IRQS 0x01
+#define PM_HW_ISSUES_DETECT 0x02
 
 /* Case 1: the GPU was granted by the Arbiter, it will have
  * already been reset. The following flag ensures it is not reset
@@ -105,7 +105,6 @@ void kbase_pm_term(struct kbase_device *kbdev);
  */
 void kbase_pm_context_active(struct kbase_device *kbdev);
 
-
 /** Handler codes for doing kbase_pm_context_active_handle_suspend() */
 enum kbase_pm_suspend_handler {
 	/** A suspend is not expected/not possible - this is the same as
@@ -143,7 +142,8 @@ enum kbase_pm_suspend_handler {
  *
  * Return: 0 on success, non-zero othrewise.
  */
-int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev, enum kbase_pm_suspend_handler suspend_handler);
+int kbase_pm_context_active_handle_suspend(struct kbase_device *kbdev,
+					   enum kbase_pm_suspend_handler suspend_handler);
 
 /**
  * kbase_pm_context_active_handle_suspend_locked - Same as kbase_pm_context_active_handle_suspend(),
@@ -258,7 +258,7 @@ int kbase_pm_driver_suspend(struct kbase_device *kbdev);
  * Despite kbase_pm_resume(), it will ignore to update Arbiter
  * status if there is one.
  */
-void kbase_pm_driver_resume(struct kbase_device *kbdev,	bool arb_gpu_start);
+void kbase_pm_driver_resume(struct kbase_device *kbdev, bool arb_gpu_start);
 
 /**
  * kbase_pm_handle_gpu_lost() - Handle GPU Lost for the VM

@@ -1005,7 +1005,7 @@ static int ov5647_s_stream(struct v4l2_subdev *sd, int enable)
 
 error_pm:
 	pm_runtime_put(&client->dev);
-error_unlock:    
+error_unlock:
 	mutex_unlock(&sensor->lock);
 
 	return ret;

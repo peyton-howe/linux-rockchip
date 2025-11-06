@@ -51,17 +51,22 @@ struct kbase_jd_atom;
  * - kbase_pm_get_present_cores()
  * - kbase_pm_get_active_cores()
  * - kbase_pm_get_trans_cores()
- * - kbase_pm_get_ready_cores().
+ * - kbase_pm_get_ready_cores()
+ * - kbase_pm_get_state()
+ * - core_type_to_reg()
+ * - pwr_cmd_constructor()
+ * - valid_to_power_up()
+ * - valid_to_power_down()
+ * - kbase_pm_invoke()
  *
- * They specify which type of core should be acted on.  These values are set in
- * a manner that allows core_type_to_reg() function to be simpler and more
- * efficient.
+ * They specify which type of core should be acted on.
  */
+
 enum kbase_pm_core_type {
-	KBASE_PM_CORE_L2 = L2_PRESENT_LO,
-	KBASE_PM_CORE_SHADER = SHADER_PRESENT_LO,
-	KBASE_PM_CORE_TILER = TILER_PRESENT_LO,
-	KBASE_PM_CORE_STACK = STACK_PRESENT_LO
+	KBASE_PM_CORE_L2 = GPU_CONTROL_ENUM(L2_PRESENT),
+	KBASE_PM_CORE_SHADER = GPU_CONTROL_ENUM(SHADER_PRESENT),
+	KBASE_PM_CORE_TILER = GPU_CONTROL_ENUM(TILER_PRESENT),
+	KBASE_PM_CORE_STACK = GPU_CONTROL_ENUM(STACK_PRESENT)
 };
 
 /*
@@ -69,7 +74,7 @@ enum kbase_pm_core_type {
  *                            state machine.
  */
 enum kbase_l2_core_state {
-#define KBASEP_L2_STATE(n) KBASE_L2_ ## n,
+#define KBASEP_L2_STATE(n) KBASE_L2_##n,
 #include "mali_kbase_pm_l2_states.h"
 #undef KBASEP_L2_STATE
 };
@@ -79,7 +84,7 @@ enum kbase_l2_core_state {
  * enum kbase_mcu_state - The states used for the MCU state machine.
  */
 enum kbase_mcu_state {
-#define KBASEP_MCU_STATE(n) KBASE_MCU_ ## n,
+#define KBASEP_MCU_STATE(n) KBASE_MCU_##n,
 #include "mali_kbase_pm_mcu_states.h"
 #undef KBASEP_MCU_STATE
 };
@@ -89,7 +94,7 @@ enum kbase_mcu_state {
  * enum kbase_shader_core_state - The states used for the shaders' state machine.
  */
 enum kbase_shader_core_state {
-#define KBASEP_SHADER_STATE(n) KBASE_SHADERS_ ## n,
+#define KBASEP_SHADER_STATE(n) KBASE_SHADERS_##n,
 #include "mali_kbase_pm_shader_states.h"
 #undef KBASEP_SHADER_STATE
 };
@@ -520,6 +525,8 @@ struct kbase_pm_backend_data {
 	bool db_mirror_interrupt_enabled;
 	enum kbase_pm_runtime_suspend_abort_reason runtime_suspend_abort_reason;
 #endif
+
+	bool l2_force_off_after_mcu_halt;
 #endif
 	bool l2_desired;
 	bool l2_always_on;
@@ -548,16 +555,16 @@ struct kbase_pm_backend_data {
 
 #if MALI_USE_CSF
 /* CSF PM flag, signaling that the MCU shader Core should be kept on */
-#define  CSF_DYNAMIC_PM_CORE_KEEP_ON (1 << 0)
+#define CSF_DYNAMIC_PM_CORE_KEEP_ON (1 << 0)
 /* CSF PM flag, signaling no scheduler suspension on idle groups */
 #define CSF_DYNAMIC_PM_SCHED_IGNORE_IDLE (1 << 1)
 /* CSF PM flag, signaling no scheduler suspension on no runnable groups */
 #define CSF_DYNAMIC_PM_SCHED_NO_SUSPEND (1 << 2)
 
 /* The following flags corresponds to existing defined PM policies */
-#define ALWAYS_ON_PM_SCHED_FLAGS (CSF_DYNAMIC_PM_CORE_KEEP_ON | \
-				  CSF_DYNAMIC_PM_SCHED_IGNORE_IDLE | \
-				  CSF_DYNAMIC_PM_SCHED_NO_SUSPEND)
+#define ALWAYS_ON_PM_SCHED_FLAGS                                          \
+	(CSF_DYNAMIC_PM_CORE_KEEP_ON | CSF_DYNAMIC_PM_SCHED_IGNORE_IDLE | \
+	 CSF_DYNAMIC_PM_SCHED_NO_SUSPEND)
 #define COARSE_ON_DEMAND_PM_SCHED_FLAGS (0)
 #if !MALI_CUSTOMER_RELEASE
 #define ALWAYS_ON_DEMAND_PM_SCHED_FLAGS (CSF_DYNAMIC_PM_SCHED_IGNORE_IDLE)
@@ -597,7 +604,7 @@ enum kbase_pm_policy_event {
 	 * @KBASE_PM_POLICY_EVENT_TIMER_MISS: Indicates that the GPU did not
 	 * become active before the Shader Tick Timer timeout occurred.
 	 */
-	KBASE_PM_POLICY_EVENT_TIMER_MISS,
+	KBASE_PM_POLICY_EVENT_TIMER_MISS
 };
 
 /**
@@ -681,8 +688,7 @@ struct kbase_pm_policy {
 	 *         valid pointer)
 	 * @event: The id of the power event that has occurred
 	 */
-	void (*handle_event)(struct kbase_device *kbdev,
-			     enum kbase_pm_policy_event event);
+	void (*handle_event)(struct kbase_device *kbdev, enum kbase_pm_policy_event event);
 
 	enum kbase_pm_policy_id id;
 

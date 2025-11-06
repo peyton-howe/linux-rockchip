@@ -108,7 +108,7 @@ int kbase_csf_scheduler_group_get_slot_locked(struct kbase_queue_group *group);
  * Note: Caller must hold the interrupt_lock.
  */
 bool kbase_csf_scheduler_group_events_enabled(struct kbase_device *kbdev,
-		struct kbase_queue_group *group);
+					      struct kbase_queue_group *group);
 
 /**
  * kbase_csf_scheduler_get_group_on_slot()- Gets the queue group that has been
@@ -148,8 +148,8 @@ void kbase_csf_scheduler_group_deschedule(struct kbase_queue_group *group);
  * on firmware slots from the given Kbase context. The affected groups are
  * added to the supplied list_head argument.
  */
-void kbase_csf_scheduler_evict_ctx_slots(struct kbase_device *kbdev,
-		struct kbase_context *kctx, struct list_head *evicted_groups);
+void kbase_csf_scheduler_evict_ctx_slots(struct kbase_device *kbdev, struct kbase_context *kctx,
+					 struct list_head *evicted_groups);
 
 /**
  * kbase_csf_scheduler_context_init() - Initialize the context-specific part
@@ -265,7 +265,7 @@ void kbase_csf_scheduler_enable_tick_timer(struct kbase_device *kbdev);
  * Return:	0 on success, or negative on failure.
  */
 int kbase_csf_scheduler_group_copy_suspend_buf(struct kbase_queue_group *group,
-		struct kbase_suspend_copy_buffer *sus_buf);
+					       struct kbase_suspend_copy_buffer *sus_buf);
 
 /**
  * kbase_csf_scheduler_lock - Acquire the global Scheduler lock.
@@ -300,8 +300,7 @@ static inline void kbase_csf_scheduler_unlock(struct kbase_device *kbdev)
  * This function will take the global scheduler lock, in order to serialize
  * against the Scheduler actions, for access to CS IO pages.
  */
-static inline void kbase_csf_scheduler_spin_lock(struct kbase_device *kbdev,
-						 unsigned long *flags)
+static inline void kbase_csf_scheduler_spin_lock(struct kbase_device *kbdev, unsigned long *flags)
 {
 	spin_lock_irqsave(&kbdev->csf.scheduler.interrupt_lock, *flags);
 }
@@ -313,8 +312,7 @@ static inline void kbase_csf_scheduler_spin_lock(struct kbase_device *kbdev,
  * @flags: Previously stored interrupt state when Scheduler interrupt
  *         spinlock was acquired.
  */
-static inline void kbase_csf_scheduler_spin_unlock(struct kbase_device *kbdev,
-						   unsigned long flags)
+static inline void kbase_csf_scheduler_spin_unlock(struct kbase_device *kbdev, unsigned long flags)
 {
 	spin_unlock_irqrestore(&kbdev->csf.scheduler.interrupt_lock, flags);
 }
@@ -325,8 +323,7 @@ static inline void kbase_csf_scheduler_spin_unlock(struct kbase_device *kbdev,
  *
  * @kbdev: Instance of a GPU platform device that implements a CSF interface.
  */
-static inline void
-kbase_csf_scheduler_spin_lock_assert_held(struct kbase_device *kbdev)
+static inline void kbase_csf_scheduler_spin_lock_assert_held(struct kbase_device *kbdev)
 {
 	lockdep_assert_held(&kbdev->csf.scheduler.interrupt_lock);
 }
@@ -339,7 +336,10 @@ kbase_csf_scheduler_spin_lock_assert_held(struct kbase_device *kbdev)
  *
  * Return: true if the scheduler is configured to wake up periodically
  */
-bool kbase_csf_scheduler_timer_is_enabled(struct kbase_device *kbdev);
+static inline bool kbase_csf_scheduler_timer_is_enabled(struct kbase_device *kbdev)
+{
+	return atomic_read(&kbdev->csf.scheduler.timer_enabled);
+}
 
 /**
  * kbase_csf_scheduler_timer_set_enabled() - Enable/disable periodic
@@ -348,8 +348,7 @@ bool kbase_csf_scheduler_timer_is_enabled(struct kbase_device *kbdev);
  * @kbdev:  Pointer to the device
  * @enable: Whether to enable periodic scheduler tasks
  */
-void kbase_csf_scheduler_timer_set_enabled(struct kbase_device *kbdev,
-		bool enable);
+void kbase_csf_scheduler_timer_set_enabled(struct kbase_device *kbdev, bool enable);
 
 /**
  * kbase_csf_scheduler_kick - Perform pending scheduling tasks once.
@@ -368,8 +367,7 @@ void kbase_csf_scheduler_kick(struct kbase_device *kbdev);
  *
  * Return: true if the scheduler is running with protected mode tasks
  */
-static inline bool kbase_csf_scheduler_protected_mode_in_use(
-					struct kbase_device *kbdev)
+static inline bool kbase_csf_scheduler_protected_mode_in_use(struct kbase_device *kbdev)
 {
 	return (kbdev->csf.scheduler.active_protm_grp != NULL);
 }
@@ -411,6 +409,22 @@ void kbase_csf_scheduler_pm_idle(struct kbase_device *kbdev);
  * Return: 0 if the MCU was successfully activated otherwise an error code.
  */
 int kbase_csf_scheduler_wait_mcu_active(struct kbase_device *kbdev);
+
+/**
+ * kbase_csf_scheduler_killable_wait_mcu_active - Wait for the MCU to actually become
+ *                                                active in killable state.
+ *
+ * @kbdev: Instance of a GPU platform device that implements a CSF interface.
+ *
+ * This function is same as kbase_csf_scheduler_wait_mcu_active(), expect that
+ * it would allow the SIGKILL signal to interrupt the wait.
+ * This function is supposed to be called from the code that is executed in ioctl or
+ * Userspace context, wherever it is safe to do so.
+ *
+ * Return: 0 if the MCU was successfully activated, or -ETIMEDOUT code on timeout error or
+ *        -ERESTARTSYS if the wait was interrupted.
+ */
+int kbase_csf_scheduler_killable_wait_mcu_active(struct kbase_device *kbdev);
 
 /**
  * kbase_csf_scheduler_pm_resume_no_lock - Reactivate the scheduler on system resume
@@ -521,20 +535,20 @@ void kbase_csf_scheduler_wait_for_kthread_pending_work(struct kbase_device *kbde
  *
  * @kbdev: Pointer to the device
  *
- * This function will queue the scheduling tick work item for immediate
- * execution if tick timer is not active. This can be called from interrupt
- * context to resume the scheduling after GPU was put to sleep.
+ * This function wakes up kbase_csf_scheduler_kthread() to perform a scheduling
+ * tick regardless of whether the tick timer is enabled. This can be called
+ * from interrupt context to resume the scheduling after GPU was put to sleep.
+ *
+ * Caller is expected to check kbase_csf_scheduler.timer_enabled as required
+ * to see whether it is appropriate before calling this function.
  */
 static inline void kbase_csf_scheduler_invoke_tick(struct kbase_device *kbdev)
 {
 	struct kbase_csf_scheduler *const scheduler = &kbdev->csf.scheduler;
-	unsigned long flags;
 
 	KBASE_KTRACE_ADD(kbdev, SCHEDULER_TICK_INVOKE, NULL, 0u);
-	spin_lock_irqsave(&scheduler->interrupt_lock, flags);
-	if (!scheduler->tick_timer_active)
-		queue_work(scheduler->wq, &scheduler->tick_work);
-	spin_unlock_irqrestore(&scheduler->interrupt_lock, flags);
+	if (atomic_cmpxchg(&scheduler->pending_tick_work, false, true) == false)
+		complete(&scheduler->kthread_signal);
 }
 
 /**
@@ -542,8 +556,11 @@ static inline void kbase_csf_scheduler_invoke_tick(struct kbase_device *kbdev)
  *
  * @kbdev: Pointer to the device
  *
- * This function will queue the scheduling tock work item for immediate
- * execution.
+ * This function wakes up kbase_csf_scheduler_kthread() to perform a scheduling
+ * tock.
+ *
+ * Caller is expected to check kbase_csf_scheduler.timer_enabled as required
+ * to see whether it is appropriate before calling this function.
  */
 static inline void kbase_csf_scheduler_invoke_tock(struct kbase_device *kbdev)
 {
@@ -551,7 +568,7 @@ static inline void kbase_csf_scheduler_invoke_tock(struct kbase_device *kbdev)
 
 	KBASE_KTRACE_ADD(kbdev, SCHEDULER_TOCK_INVOKE, NULL, 0u);
 	if (atomic_cmpxchg(&scheduler->pending_tock_work, false, true) == false)
-		mod_delayed_work(scheduler->wq, &scheduler->tock_work, 0);
+		complete(&scheduler->kthread_signal);
 }
 
 /**

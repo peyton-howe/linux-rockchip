@@ -41,7 +41,7 @@
  * the GPU actually being reset to give other contexts time for their jobs
  * to be soft-stopped and removed from the hardware before resetting.
  */
-#define ZAP_TIMEOUT             1000
+#define ZAP_TIMEOUT 1000
 
 /*
  * Prevent soft-stops from occurring in scheduling situations
@@ -104,7 +104,7 @@
 #define JS_COMMAND_SW_CAUSES_DISJOINT 0x100
 
 /* Bitmask of all SW related flags */
-#define JS_COMMAND_SW_BITS  (JS_COMMAND_SW_CAUSES_DISJOINT)
+#define JS_COMMAND_SW_BITS (JS_COMMAND_SW_CAUSES_DISJOINT)
 
 #if (JS_COMMAND_SW_BITS & JS_COMMAND_MASK)
 #error "JS_COMMAND_SW_BITS not masked off by JS_COMMAND_MASK." \
@@ -114,8 +114,7 @@
 /* Soft-stop command that causes a Disjoint event. This of course isn't
  * entirely masked off by JS_COMMAND_MASK
  */
-#define JS_COMMAND_SOFT_STOP_WITH_SW_DISJOINT \
-		(JS_COMMAND_SW_CAUSES_DISJOINT | JS_COMMAND_SOFT_STOP)
+#define JS_COMMAND_SOFT_STOP_WITH_SW_DISJOINT (JS_COMMAND_SW_CAUSES_DISJOINT | JS_COMMAND_SOFT_STOP)
 
 #define KBASEP_ATOM_ID_INVALID BASE_JD_ATOM_COUNT
 
@@ -148,7 +147,8 @@ enum kbase_timeout_selector {
 	KBASE_CLEAN_CACHE_TIMEOUT,
 	KBASE_AS_INACTIVE_TIMEOUT,
 	/* Must be the last in the enum */
-	KBASE_TIMEOUT_SELECTOR_COUNT
+	KBASE_TIMEOUT_SELECTOR_COUNT,
+	KBASE_DEFAULT_TIMEOUT = JM_DEFAULT_JS_FREE_TIMEOUT
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -171,7 +171,6 @@ enum kbase_timeout_selector {
  *                  for the faulty atom.
  */
 struct base_job_fault_event {
-
 	u32 event_code;
 	struct kbase_jd_atom *katom;
 	struct work_struct job_fault_work;
@@ -211,8 +210,7 @@ kbase_jd_katom_dep_atom(const struct kbase_jd_atom_dependency *dep)
  *
  * Return: the type of dependency there is on the dependee atom.
  */
-static inline u8 kbase_jd_katom_dep_type(
-		const struct kbase_jd_atom_dependency *dep)
+static inline u8 kbase_jd_katom_dep_type(const struct kbase_jd_atom_dependency *dep)
 {
 	return dep->dep_type;
 }
@@ -224,9 +222,8 @@ static inline u8 kbase_jd_katom_dep_type(
  * @a:            pointer to the dependee atom.
  * @type:         type of dependency there is on the dependee atom.
  */
-static inline void kbase_jd_katom_dep_set(
-		const struct kbase_jd_atom_dependency *const_dep,
-		struct kbase_jd_atom *a, u8 type)
+static inline void kbase_jd_katom_dep_set(const struct kbase_jd_atom_dependency *const_dep,
+					  struct kbase_jd_atom *a, u8 type)
 {
 	struct kbase_jd_atom_dependency *dep;
 
@@ -241,8 +238,7 @@ static inline void kbase_jd_katom_dep_set(
  *
  * @const_dep:    pointer to the dependency info structure to be setup.
  */
-static inline void kbase_jd_katom_dep_clear(
-		const struct kbase_jd_atom_dependency *const_dep)
+static inline void kbase_jd_katom_dep_clear(const struct kbase_jd_atom_dependency *const_dep)
 {
 	struct kbase_jd_atom_dependency *dep;
 
@@ -613,8 +609,7 @@ struct kbase_jd_atom {
 	u32 age;
 };
 
-static inline bool kbase_jd_katom_is_protected(
-		const struct kbase_jd_atom *katom)
+static inline bool kbase_jd_katom_is_protected(const struct kbase_jd_atom *katom)
 {
 	return (bool)(katom->atom_flags & KBASE_KATOM_FLAG_PROTECTED);
 }
@@ -778,10 +773,6 @@ struct jsctx_queue {
  * @pf_data:           Data relating to Page fault.
  * @bf_data:           Data relating to Bus fault.
  * @current_setup:     Stores the MMU configuration for this address space.
- * @is_unresponsive:   Flag to indicate MMU is not responding.
- *                     Set if a MMU command isn't completed within
- *                     &kbase_device:mmu_as_inactive_wait_time_ms.
- *                     Clear by kbase_ctx_sched_restore_all_as() after GPU reset completes.
  */
 struct kbase_as {
 	unsigned int number;
@@ -791,7 +782,6 @@ struct kbase_as {
 	struct kbase_fault pf_data;
 	struct kbase_fault bf_data;
 	struct kbase_mmu_setup current_setup;
-	bool is_unresponsive;
 };
 
 #endif /* _KBASE_JM_DEFS_H_ */

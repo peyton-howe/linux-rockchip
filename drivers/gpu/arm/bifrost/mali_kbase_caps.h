@@ -145,4 +145,4 @@ static inline bool mali_kbase_supports_reject_alloc_mem_unused_bit_27(unsigned l
 	return mali_kbase_supports_cap(api_version, MALI_KBASE_CAP_REJECT_ALLOC_MEM_UNUSED_BIT_27);
 }
 
-#endif	/* __KBASE_CAPS_H_ */
+#endif /* __KBASE_CAPS_H_ */

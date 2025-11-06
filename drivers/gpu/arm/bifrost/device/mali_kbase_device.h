@@ -19,7 +19,11 @@
  *
  */
 
+#ifndef _MALI_KBASE_DEVICE_H_
+#define _MALI_KBASE_DEVICE_H_
+
 #include <mali_kbase.h>
+#include <hw_access/mali_kbase_hw_access.h>
 
 /**
  * kbase_device_get_list - get device list.
@@ -84,27 +88,6 @@ int kbase_device_init(struct kbase_device *kbdev);
 void kbase_device_term(struct kbase_device *kbdev);
 
 /**
- * kbase_reg_write - write to GPU register
- * @kbdev:  Kbase device pointer
- * @offset: Offset of register
- * @value:  Value to write
- *
- * Caller must ensure the GPU is powered (@kbdev->pm.gpu_powered != false).
- */
-void kbase_reg_write(struct kbase_device *kbdev, u32 offset, u32 value);
-
-/**
- * kbase_reg_read - read from GPU register
- * @kbdev:  Kbase device pointer
- * @offset: Offset of register
- *
- * Caller must ensure the GPU is powered (@kbdev->pm.gpu_powered != false).
- *
- * Return: Value in desired register
- */
-u32 kbase_reg_read(struct kbase_device *kbdev, u32 offset);
-
-/**
  * kbase_is_gpu_removed() - Has the GPU been removed.
  * @kbdev:    Kbase device pointer
  *
@@ -152,8 +135,7 @@ int kbase_gpu_cache_flush_pa_range_and_busy_wait(struct kbase_device *kbdev, phy
  *
  * Return: 0 if successful or a negative error code on failure.
  */
-int kbase_gpu_cache_flush_and_busy_wait(struct kbase_device *kbdev,
-					u32 flush_op);
+int kbase_gpu_cache_flush_and_busy_wait(struct kbase_device *kbdev, u32 flush_op);
 
 /**
  * kbase_gpu_start_cache_clean - Start a cache clean
@@ -173,8 +155,7 @@ void kbase_gpu_start_cache_clean(struct kbase_device *kbdev, u32 flush_op);
  * Issue a given cache flush command to hardware.
  * hwaccess_lock must be held by the caller.
  */
-void kbase_gpu_start_cache_clean_nolock(struct kbase_device *kbdev,
-					u32 flush_op);
+void kbase_gpu_start_cache_clean_nolock(struct kbase_device *kbdev, u32 flush_op);
 
 /**
  * kbase_gpu_wait_cache_clean - Wait for cache cleaning to finish
@@ -194,11 +175,11 @@ void kbase_gpu_wait_cache_clean(struct kbase_device *kbdev);
  * called from paths (like GPU reset) where an indefinite wait for the
  * completion of cache clean operation can cause deadlock, as the operation may
  * never complete.
+ * If cache clean times out, reset GPU to recover.
  *
  * Return: 0 if successful or a negative error code on failure.
  */
-int kbase_gpu_wait_cache_clean_timeout(struct kbase_device *kbdev,
-		unsigned int wait_timeout_ms);
+int kbase_gpu_wait_cache_clean_timeout(struct kbase_device *kbdev, unsigned int wait_timeout_ms);
 
 /**
  * kbase_gpu_cache_clean_wait_complete - Called after the cache cleaning is
@@ -228,3 +209,5 @@ void kbase_clean_caches_done(struct kbase_device *kbdev);
  * handled.
  */
 void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val);
+
+#endif /* _MALI_KBASE_DEVICE_H_ */

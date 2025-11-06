@@ -33,5 +33,3 @@ static inline void mali_kbase_print_cs_experimental(void)
 }
 
 #endif /* _KBASE_CS_EXPERIMENTAL_H_ */
-
-

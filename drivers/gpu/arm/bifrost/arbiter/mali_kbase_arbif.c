@@ -32,13 +32,11 @@
 
 /* Arbiter interface version against which was implemented this module */
 #define MALI_REQUIRED_KBASE_ARBITER_INTERFACE_VERSION 5
-#if MALI_REQUIRED_KBASE_ARBITER_INTERFACE_VERSION != \
-			MALI_ARBITER_INTERFACE_VERSION
+#if MALI_REQUIRED_KBASE_ARBITER_INTERFACE_VERSION != MALI_ARBITER_INTERFACE_VERSION
 #error "Unsupported Mali Arbiter interface version."
 #endif
 
-static void on_max_config(struct device *dev, uint32_t max_l2_slices,
-			  uint32_t max_core_mask)
+static void on_max_config(struct device *dev, uint32_t max_l2_slices, uint32_t max_core_mask)
 {
 	struct kbase_device *kbdev;
 
@@ -54,9 +52,7 @@ static void on_max_config(struct device *dev, uint32_t max_l2_slices,
 	}
 
 	if (!max_l2_slices || !max_core_mask) {
-		dev_dbg(dev,
-			"%s(): max_config ignored as one of the fields is zero",
-			__func__);
+		dev_dbg(dev, "%s(): max_config ignored as one of the fields is zero", __func__);
 		return;
 	}
 

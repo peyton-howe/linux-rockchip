@@ -1361,23 +1361,6 @@ static int hdmirx_dv_timings_cap(struct file *file, void *fh,
 	return 0;
 }
 
-static int hdmirx_g_parm(struct file *file, void *priv,
-			 struct v4l2_streamparm *parm)
-{
-	struct hdmirx_stream *stream = video_drvdata(file);
-	struct rk_hdmirx_dev *hdmirx_dev = stream->hdmirx_dev;
-	struct v4l2_fract fps;
-
-	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
-		return -EINVAL;
-
-	fps = v4l2_calc_timeperframe(&hdmirx_dev->timings);
-	parm->parm.capture.timeperframe.numerator = fps.numerator;
-	parm->parm.capture.timeperframe.denominator = fps.denominator;
-
-	return 0;
-}
-
 static int hdmirx_enum_dv_timings(struct file *file, void *_fh,
 				    struct v4l2_enum_dv_timings *timings)
 {

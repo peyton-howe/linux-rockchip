@@ -60,12 +60,6 @@
 #define	STMMAC_ALIGN(x)		ALIGN(ALIGN(x, SMP_CACHE_BYTES), 16)
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
 
-#define	RTL8211F_PHY_UID	0x001cc800
-#define	RTL8211F_PHY_UID_MASK	0x001ffc00
-#define	RTL8211F_PAGE_SELECT	0x1f
-#define	RTL8211F_LCR_ADDR	0x10
-#define	RTL8211F_EEELCR_ADDR	0x11
-
 /* Module parameters */
 #define TX_TIMEO	5000
 static int watchdog = TX_TIMEO;
@@ -7499,18 +7493,6 @@ if (ret)
 	 * If CONFIG_PM is not enabled, the clocks will stay powered.
 	 */
 	pm_runtime_put(device);
-
-	/* Register fixup for PHY RTL8211F */
-	ret = phy_register_fixup_for_uid(RTL8211F_PHY_UID, RTL8211F_PHY_UID_MASK, phy_rtl8211f_led_fixup);
-	if (ret) {
-		dev_warn(priv->device, "Failed to register fixup for PHY RTL8211F.\n");
-	}
-
-	/* Register fixup for PHY RTL8211F disabling EEE */
-	ret = phy_register_fixup_for_uid(RTL8211F_PHY_UID, RTL8211F_PHY_UID_MASK, phy_rtl8211f_eee_fixup);
-	if (ret) {
-		dev_warn(priv->device, "Failed to register fixup for PHY RTL8211F disabling EEE.\n");
-	}
 
 	return ret;
 

@@ -31,27 +31,20 @@
 #include <mmu/mali_kbase_mmu_internal.h>
 #include <mmu/mali_kbase_mmu_faults_decoder.h>
 
-void kbase_mmu_get_as_setup(struct kbase_mmu_table *mmut,
-		struct kbase_mmu_setup * const setup)
+void kbase_mmu_get_as_setup(struct kbase_mmu_table *mmut, struct kbase_mmu_setup *const setup)
 {
 	/* Set up the required caching policies at the correct indices
 	 * in the memattr register.
 	 */
 	setup->memattr =
-		(AS_MEMATTR_IMPL_DEF_CACHE_POLICY <<
-			(AS_MEMATTR_INDEX_IMPL_DEF_CACHE_POLICY * 8)) |
-		(AS_MEMATTR_FORCE_TO_CACHE_ALL <<
-			(AS_MEMATTR_INDEX_FORCE_TO_CACHE_ALL * 8)) |
-		(AS_MEMATTR_WRITE_ALLOC <<
-			(AS_MEMATTR_INDEX_WRITE_ALLOC * 8)) |
-		(AS_MEMATTR_AARCH64_OUTER_IMPL_DEF   <<
-			(AS_MEMATTR_INDEX_OUTER_IMPL_DEF * 8)) |
-		(AS_MEMATTR_AARCH64_OUTER_WA <<
-			(AS_MEMATTR_INDEX_OUTER_WA * 8)) |
-		(AS_MEMATTR_AARCH64_NON_CACHEABLE <<
-			(AS_MEMATTR_INDEX_NON_CACHEABLE * 8)) |
-		(AS_MEMATTR_AARCH64_SHARED <<
-			(AS_MEMATTR_INDEX_SHARED * 8));
+		(KBASE_MEMATTR_IMPL_DEF_CACHE_POLICY
+		 << (KBASE_MEMATTR_INDEX_IMPL_DEF_CACHE_POLICY * 8)) |
+		(KBASE_MEMATTR_FORCE_TO_CACHE_ALL << (KBASE_MEMATTR_INDEX_FORCE_TO_CACHE_ALL * 8)) |
+		(KBASE_MEMATTR_WRITE_ALLOC << (KBASE_MEMATTR_INDEX_WRITE_ALLOC * 8)) |
+		(KBASE_MEMATTR_AARCH64_OUTER_IMPL_DEF << (KBASE_MEMATTR_INDEX_OUTER_IMPL_DEF * 8)) |
+		(KBASE_MEMATTR_AARCH64_OUTER_WA << (KBASE_MEMATTR_INDEX_OUTER_WA * 8)) |
+		(KBASE_MEMATTR_AARCH64_NON_CACHEABLE << (KBASE_MEMATTR_INDEX_NON_CACHEABLE * 8)) |
+		(KBASE_MEMATTR_AARCH64_SHARED << (KBASE_MEMATTR_INDEX_SHARED * 8));
 
 	setup->transtab = (u64)mmut->pgd & AS_TRANSTAB_BASE_MASK;
 	setup->transcfg = AS_TRANSCFG_MODE_SET(0ULL, AS_TRANSCFG_MODE_AARCH64_4K);
@@ -66,8 +59,7 @@ void kbase_mmu_get_as_setup(struct kbase_mmu_table *mmut,
  *
  * This function submits a work for reporting the details of MMU fault.
  */
-static void submit_work_pagefault(struct kbase_device *kbdev, u32 as_nr,
-		struct kbase_fault *fault)
+static void submit_work_pagefault(struct kbase_device *kbdev, u32 as_nr, struct kbase_fault *fault)
 {
 	unsigned long flags;
 	struct kbase_as *const as = &kbdev->as[as_nr];
@@ -79,7 +71,7 @@ static void submit_work_pagefault(struct kbase_device *kbdev, u32 as_nr,
 	if (kctx) {
 		kbase_ctx_sched_retain_ctx_refcount(kctx);
 
-		as->pf_data = (struct kbase_fault) {
+		as->pf_data = (struct kbase_fault){
 			.status = fault->status,
 			.addr = fault->addr,
 		};
@@ -90,8 +82,7 @@ static void submit_work_pagefault(struct kbase_device *kbdev, u32 as_nr,
 		 * MCU's address space.
 		 */
 		if (!queue_work(as->pf_wq, &as->work_pagefault)) {
-			dev_dbg(kbdev->dev,
-				"Page fault is already pending for as %u", as_nr);
+			dev_dbg(kbdev->dev, "Page fault is already pending for as %u", as_nr);
 			kbase_ctx_sched_release_ctx(kctx);
 		} else {
 			atomic_inc(&kbdev->faults_pending);
@@ -100,8 +91,7 @@ static void submit_work_pagefault(struct kbase_device *kbdev, u32 as_nr,
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 }
 
-void kbase_mmu_report_mcu_as_fault_and_reset(struct kbase_device *kbdev,
-		struct kbase_fault *fault)
+void kbase_mmu_report_mcu_as_fault_and_reset(struct kbase_device *kbdev, struct kbase_fault *fault)
 {
 	/* decode the fault status */
 	u32 exception_type = fault->status & 0xFF;
@@ -134,15 +124,14 @@ void kbase_mmu_report_mcu_as_fault_and_reset(struct kbase_device *kbdev,
 		submit_work_pagefault(kbdev, as_no, fault);
 
 	/* GPU reset is required to recover */
-	if (kbase_prepare_to_reset_gpu(kbdev,
-				       RESET_FLAGS_HWC_UNRECOVERABLE_ERROR))
+	if (kbase_prepare_to_reset_gpu(kbdev, RESET_FLAGS_HWC_UNRECOVERABLE_ERROR))
 		kbase_reset_gpu(kbdev);
 
 }
 KBASE_EXPORT_TEST_API(kbase_mmu_report_mcu_as_fault_and_reset);
 
-void kbase_gpu_report_bus_fault_and_kill(struct kbase_context *kctx,
-		struct kbase_as *as, struct kbase_fault *fault)
+void kbase_gpu_report_bus_fault_and_kill(struct kbase_context *kctx, struct kbase_as *as,
+					 struct kbase_fault *fault)
 {
 	struct kbase_device *kbdev = kctx->kbdev;
 	u32 const status = fault->status;
@@ -194,8 +183,7 @@ void kbase_gpu_report_bus_fault_and_kill(struct kbase_context *kctx,
 
 	/* Now clear the GPU fault */
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
-	kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_COMMAND),
-			GPU_COMMAND_CLEAR_FAULT);
+	kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND), GPU_COMMAND_CLEAR_FAULT);
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 }
@@ -204,9 +192,8 @@ void kbase_gpu_report_bus_fault_and_kill(struct kbase_context *kctx,
  * The caller must ensure it's retained the ctx to prevent it from being
  * scheduled out whilst it's being worked on.
  */
-void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
-		struct kbase_as *as, const char *reason_str,
-		struct kbase_fault *fault)
+void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx, struct kbase_as *as,
+				     const char *reason_str, struct kbase_fault *fault)
 {
 	unsigned long flags;
 	struct kbase_device *kbdev = kctx->kbdev;
@@ -262,11 +249,12 @@ void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
 	}
 	kbase_mmu_disable(kctx);
 	kbase_ctx_flag_set(kctx, KCTX_AS_DISABLED_ON_FAULT);
+	kbase_debug_csf_fault_notify(kbdev, kctx, DF_GPU_PAGE_FAULT);
+	kbase_csf_ctx_report_page_fault_for_active_groups(kctx, fault);
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 	/* AS transaction end */
 
-	kbase_debug_csf_fault_notify(kbdev, kctx, DF_GPU_PAGE_FAULT);
 	/* Switching to UNMAPPED mode above would have enabled the firmware to
 	 * recover from the fault (if the memory access was made by firmware)
 	 * and it can then respond to CSG termination requests to be sent now.
@@ -276,10 +264,8 @@ void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
 	kbase_csf_ctx_handle_fault(kctx, fault);
 
 	/* Clear down the fault */
-	kbase_mmu_hw_clear_fault(kbdev, as,
-			KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
-	kbase_mmu_hw_enable_fault(kbdev, as,
-			KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
+	kbase_mmu_hw_clear_fault(kbdev, as, KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
+	kbase_mmu_hw_enable_fault(kbdev, as, KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
 
 }
 
@@ -295,29 +281,33 @@ void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
  * The function must be called with the ref_count of the kctx already increased/acquired.
  * If it fails to queue the work, the ref_count will be decreased.
  */
-static void kbase_mmu_interrupt_process(struct kbase_device *kbdev,
-		struct kbase_context *kctx, struct kbase_as *as,
-		struct kbase_fault *fault)
+static void kbase_mmu_interrupt_process(struct kbase_device *kbdev, struct kbase_context *kctx,
+					struct kbase_as *as, struct kbase_fault *fault)
 {
 	lockdep_assert_held(&kbdev->hwaccess_lock);
 
 	if (!kctx) {
-		dev_warn(kbdev->dev, "%s in AS%d at 0x%016llx with no context present! Spurious IRQ or SW Design Error?\n",
-				kbase_as_has_bus_fault(as, fault) ?
-						"Bus error" : "Page fault",
+		if (kbase_as_has_bus_fault(as, fault)) {
+			dev_warn(
+				kbdev->dev,
+				"Bus error in AS%d at PA 0x%pK with no context present! Spurious IRQ or SW Design Error?\n",
+				as->number, (void *)(uintptr_t)fault->addr);
+		} else {
+			dev_warn(
+				kbdev->dev,
+				"Page fault in AS%d at VA 0x%016llx with no context present! Spurious IRQ or SW Design Error?\n",
 				as->number, fault->addr);
+		}
 
 		/* Since no ctx was found, the MMU must be disabled. */
 		WARN_ON(as->current_setup.transtab);
 
 		if (kbase_as_has_bus_fault(as, fault))
-			kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_COMMAND),
-				GPU_COMMAND_CLEAR_FAULT);
+			kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
+					  GPU_COMMAND_CLEAR_FAULT);
 		else if (kbase_as_has_page_fault(as, fault)) {
-			kbase_mmu_hw_clear_fault(kbdev, as,
-					KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
-			kbase_mmu_hw_enable_fault(kbdev, as,
-					KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
+			kbase_mmu_hw_clear_fault(kbdev, as, KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
+			kbase_mmu_hw_enable_fault(kbdev, as, KBASE_MMU_FAULT_TYPE_PAGE_UNEXPECTED);
 		}
 
 		return;
@@ -343,8 +333,7 @@ static void kbase_mmu_interrupt_process(struct kbase_device *kbdev,
 	}
 }
 
-int kbase_mmu_bus_fault_interrupt(struct kbase_device *kbdev,
-		u32 status, u32 as_nr)
+int kbase_mmu_bus_fault_interrupt(struct kbase_device *kbdev, u32 status, u32 as_nr)
 {
 	struct kbase_context *kctx;
 	unsigned long flags;
@@ -360,10 +349,7 @@ int kbase_mmu_bus_fault_interrupt(struct kbase_device *kbdev,
 	as = &kbdev->as[as_nr];
 	fault = &as->bf_data;
 	fault->status = status;
-	fault->addr = (u64) kbase_reg_read(kbdev,
-		GPU_CONTROL_REG(GPU_FAULTADDRESS_HI)) << 32;
-	fault->addr |= kbase_reg_read(kbdev,
-		GPU_CONTROL_REG(GPU_FAULTADDRESS_LO));
+	fault->addr = kbase_reg_read64(kbdev, GPU_CONTROL_ENUM(GPU_FAULTADDRESS));
 	fault->protected_mode = false;
 
 	/* report the fault to debugfs */
@@ -391,9 +377,9 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat)
 
 	/* remember current mask */
 	spin_lock_irqsave(&kbdev->mmu_mask_change, flags);
-	new_mask = kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_MASK));
+	new_mask = kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK));
 	/* mask interrupts for now */
-	kbase_reg_write(kbdev, MMU_REG(MMU_IRQ_MASK), 0);
+	kbase_reg_write32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK), 0);
 	spin_unlock_irqrestore(&kbdev->mmu_mask_change, flags);
 
 	while (pf_bits) {
@@ -403,11 +389,7 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat)
 		struct kbase_fault *fault = &as->pf_data;
 
 		/* find faulting address */
-		fault->addr = kbase_reg_read(kbdev, MMU_AS_REG(as_no,
-				AS_FAULTADDRESS_HI));
-		fault->addr <<= 32;
-		fault->addr |= kbase_reg_read(kbdev, MMU_AS_REG(as_no,
-				AS_FAULTADDRESS_LO));
+		fault->addr = kbase_reg_read64(kbdev, MMU_AS_OFFSET(as_no, FAULTADDRESS));
 
 		/* Mark the fault protected or not */
 		fault->protected_mode = false;
@@ -416,14 +398,11 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat)
 		kbase_as_fault_debugfs_new(kbdev, as_no);
 
 		/* record the fault status */
-		fault->status = kbase_reg_read(kbdev, MMU_AS_REG(as_no,
-				AS_FAULTSTATUS));
+		fault->status = kbase_reg_read32(kbdev, MMU_AS_OFFSET(as_no, FAULTSTATUS));
 
-		fault->extra_addr = kbase_reg_read(kbdev,
-					MMU_AS_REG(as_no, AS_FAULTEXTRA_HI));
-		fault->extra_addr <<= 32;
-		fault->extra_addr |= kbase_reg_read(kbdev,
-					MMU_AS_REG(as_no, AS_FAULTEXTRA_LO));
+		if (kbase_reg_is_valid(kbdev, MMU_AS_OFFSET(as_no, FAULTEXTRA)))
+			fault->extra_addr =
+				kbase_reg_read64(kbdev, MMU_AS_OFFSET(as_no, FAULTEXTRA));
 
 		/* Mark page fault as handled */
 		pf_bits &= ~(1UL << as_no);
@@ -455,9 +434,9 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat)
 
 	/* reenable interrupts */
 	spin_lock_irqsave(&kbdev->mmu_mask_change, flags);
-	tmp = kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_MASK));
+	tmp = kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK));
 	new_mask |= tmp;
-	kbase_reg_write(kbdev, MMU_REG(MMU_IRQ_MASK), new_mask);
+	kbase_reg_write32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK), new_mask);
 	spin_unlock_irqrestore(&kbdev->mmu_mask_change, flags);
 }
 
@@ -471,34 +450,30 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat)
  */
 static void kbase_mmu_gpu_fault_worker(struct work_struct *data)
 {
-	struct kbase_as *const faulting_as = container_of(data, struct kbase_as,
-			work_gpufault);
+	struct kbase_as *const faulting_as = container_of(data, struct kbase_as, work_gpufault);
 	const u32 as_nr = faulting_as->number;
-	struct kbase_device *const kbdev = container_of(faulting_as, struct
-			kbase_device, as[as_nr]);
+	struct kbase_device *const kbdev =
+		container_of(faulting_as, struct kbase_device, as[as_nr]);
 	struct kbase_fault *fault;
 	struct kbase_context *kctx;
 	u32 status;
-	u64 address;
+	uintptr_t phys_addr;
 	u32 as_valid;
 	unsigned long flags;
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 	fault = &faulting_as->gf_data;
 	status = fault->status;
-	as_valid = status & GPU_FAULTSTATUS_JASID_VALID_FLAG;
-	address = fault->addr;
+	as_valid = status & GPU_FAULTSTATUS_JASID_VALID_MASK;
+	phys_addr = (uintptr_t)fault->addr;
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 	dev_warn(kbdev->dev,
-		 "GPU Fault 0x%08x (%s) in AS%u at 0x%016llx\n"
+		 "GPU Fault 0x%08x (%s) in AS%u at PA 0x%pK\n"
 		 "ASID_VALID: %s,  ADDRESS_VALID: %s\n",
-		 status,
-		 kbase_gpu_exception_name(
-			GPU_FAULTSTATUS_EXCEPTION_TYPE_GET(status)),
-		 as_nr, address,
-		 as_valid ? "true" : "false",
-		 status & GPU_FAULTSTATUS_ADDR_VALID_FLAG ? "true" : "false");
+		 status, kbase_gpu_exception_name(GPU_FAULTSTATUS_EXCEPTION_TYPE_GET(status)),
+		 as_nr, (void *)phys_addr, as_valid ? "true" : "false",
+		 status & GPU_FAULTSTATUS_ADDRESS_VALID_MASK ? "true" : "false");
 
 	kctx = kbase_ctx_sched_as_to_ctx(kbdev, as_nr);
 	kbase_csf_ctx_handle_fault(kctx, fault);
@@ -509,8 +484,7 @@ static void kbase_mmu_gpu_fault_worker(struct work_struct *data)
 	 * Now clear the GPU fault to allow next GPU fault interrupt report.
 	 */
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
-	kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_COMMAND),
-			GPU_COMMAND_CLEAR_FAULT);
+	kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND), GPU_COMMAND_CLEAR_FAULT);
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 	atomic_dec(&kbdev->faults_pending);
@@ -526,8 +500,7 @@ static void kbase_mmu_gpu_fault_worker(struct work_struct *data)
  *
  * This function submits a work for reporting the details of GPU fault.
  */
-static void submit_work_gpufault(struct kbase_device *kbdev, u32 status,
-		u32 as_nr, u64 address)
+static void submit_work_gpufault(struct kbase_device *kbdev, u32 status, u32 as_nr, u64 address)
 {
 	unsigned long flags;
 	struct kbase_as *const as = &kbdev->as[as_nr];
@@ -539,7 +512,7 @@ static void submit_work_gpufault(struct kbase_device *kbdev, u32 status,
 	if (kctx) {
 		kbase_ctx_sched_retain_ctx_refcount(kctx);
 
-		as->gf_data = (struct kbase_fault) {
+		as->gf_data = (struct kbase_fault){
 			.status = status,
 			.addr = address,
 		};
@@ -552,8 +525,8 @@ static void submit_work_gpufault(struct kbase_device *kbdev, u32 status,
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 }
 
-void kbase_mmu_gpu_fault_interrupt(struct kbase_device *kbdev, u32 status,
-		u32 as_nr, u64 address, bool as_valid)
+void kbase_mmu_gpu_fault_interrupt(struct kbase_device *kbdev, u32 status, u32 as_nr, u64 address,
+				   bool as_valid)
 {
 	if (!as_valid || (as_nr == MCU_AS_NR)) {
 		int as;
@@ -571,12 +544,8 @@ KBASE_EXPORT_TEST_API(kbase_mmu_gpu_fault_interrupt);
 int kbase_mmu_as_init(struct kbase_device *kbdev, unsigned int i)
 {
 	kbdev->as[i].number = i;
-	kbdev->as[i].bf_data.addr = 0ULL;
-	kbdev->as[i].pf_data.addr = 0ULL;
-	kbdev->as[i].gf_data.addr = 0ULL;
-	kbdev->as[i].is_unresponsive = false;
 
-	kbdev->as[i].pf_wq = alloc_workqueue("mali_mmu%d", WQ_UNBOUND, 1, i);
+	kbdev->as[i].pf_wq = alloc_workqueue("mali_mmu%d", WQ_UNBOUND, 0, i);
 	if (!kbdev->as[i].pf_wq)
 		return -ENOMEM;
 

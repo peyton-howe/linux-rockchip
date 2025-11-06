@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2010, 2012-2015, 2017-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2023 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -24,7 +24,7 @@
  */
 
 #include <mali_kbase.h>
-#include <gpu/mali_kbase_gpu_regmap.h>
+#include <hw_access/mali_kbase_hw_access_regmap.h>
 
 #include "backend/gpu/mali_kbase_model_linux.h"
 #include "device/mali_kbase_device.h"
@@ -108,30 +108,6 @@ void gpu_device_raise_irq(void *model, u32 irq)
 		queue_work(kbdev->irq_workq, &data->work);
 }
 
-void kbase_reg_write(struct kbase_device *kbdev, u32 offset, u32 value)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&kbdev->reg_op_lock, flags);
-	midgard_model_write_reg(kbdev->model, offset, value);
-	spin_unlock_irqrestore(&kbdev->reg_op_lock, flags);
-}
-
-KBASE_EXPORT_TEST_API(kbase_reg_write);
-
-u32 kbase_reg_read(struct kbase_device *kbdev, u32 offset)
-{
-	unsigned long flags;
-	u32 val;
-
-	spin_lock_irqsave(&kbdev->reg_op_lock, flags);
-	midgard_model_read_reg(kbdev->model, offset, &val);
-	spin_unlock_irqrestore(&kbdev->reg_op_lock, flags);
-
-	return val;
-}
-KBASE_EXPORT_TEST_API(kbase_reg_read);
-
 int kbase_install_interrupts(struct kbase_device *kbdev)
 {
 	KBASE_DEBUG_ASSERT(kbdev);
@@ -144,8 +120,8 @@ int kbase_install_interrupts(struct kbase_device *kbdev)
 	if (kbdev->irq_workq == NULL)
 		return -ENOMEM;
 
-	kbdev->irq_slab = kmem_cache_create("dummy_irq_slab",
-				sizeof(struct model_irq_data), 0, 0, NULL);
+	kbdev->irq_slab =
+		kmem_cache_create("dummy_irq_slab", sizeof(struct model_irq_data), 0, 0, NULL);
 	if (kbdev->irq_slab == NULL) {
 		destroy_workqueue(kbdev->irq_workq);
 		return -ENOMEM;

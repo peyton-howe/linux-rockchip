@@ -28,9 +28,9 @@
 
 /* A HWC dump mapping */
 struct kbase_hwc_dma_mapping {
-	void       *cpu_va;
-	dma_addr_t  dma_pa;
-	size_t      size;
+	void *cpu_va;
+	dma_addr_t dma_pa;
+	size_t size;
 };
 
 /**
@@ -67,8 +67,7 @@ struct kbase_va_region *kbase_mem_alloc(struct kbase_context *kctx, u64 va_pages
  *
  * Return: 0 on success or error code
  */
-int kbase_mem_query(struct kbase_context *kctx, u64 gpu_addr, u64 query,
-		u64 *const out);
+int kbase_mem_query(struct kbase_context *kctx, u64 gpu_addr, u64 query, u64 *const out);
 
 /**
  * kbase_mem_import - Import the external memory for use by the GPU
@@ -137,8 +136,7 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages);
  *
  * Return: 0 on success or error code
  */
-int kbase_mem_shrink(struct kbase_context *kctx,
-		struct kbase_va_region *reg, u64 new_pages);
+int kbase_mem_shrink(struct kbase_context *kctx, struct kbase_va_region *reg, u64 new_pages);
 
 /**
  * kbase_context_mmap - Memory map method, gets invoked when mmap system call is
@@ -152,9 +150,10 @@ int kbase_mem_shrink(struct kbase_context *kctx,
 int kbase_context_mmap(struct kbase_context *kctx, struct vm_area_struct *vma);
 
 /**
- * kbase_mem_evictable_init - Initialize the Ephemeral memory eviction
- * mechanism.
+ * kbase_mem_evictable_init - Initialize the Ephemeral memory eviction mechanism.
  * @kctx: The kbase context to initialize.
+ *
+ * This function must be called only when a kbase context is instantiated.
  *
  * Return: Zero on success or -errno on failure.
  */
@@ -182,16 +181,13 @@ void kbase_mem_evictable_deinit(struct kbase_context *kctx);
  *
  * Note: Caller must be holding the region lock.
  */
-int kbase_mem_grow_gpu_mapping(struct kbase_context *kctx,
-			       struct kbase_va_region *reg, u64 new_pages,
-			       u64 old_pages,
+int kbase_mem_grow_gpu_mapping(struct kbase_context *kctx, struct kbase_va_region *reg,
+			       u64 new_pages, u64 old_pages,
 			       enum kbase_caller_mmu_sync_info mmu_sync_info);
 
 /**
  * kbase_mem_evictable_make - Make a physical allocation eligible for eviction
  * @gpu_alloc: The physical allocation to make evictable
- *
- * Return: 0 on success, -errno on error.
  *
  * Take the provided region and make all the physical pages within it
  * reclaimable by the kernel, updating the per-process VM stats as well.
@@ -201,7 +197,7 @@ int kbase_mem_grow_gpu_mapping(struct kbase_context *kctx,
  *
  * Note: Must be called with the region lock of the containing context.
  */
-int kbase_mem_evictable_make(struct kbase_mem_phy_alloc *gpu_alloc);
+void kbase_mem_evictable_make(struct kbase_mem_phy_alloc *gpu_alloc);
 
 /**
  * kbase_mem_evictable_unmake - Remove a physical allocations eligibility for
@@ -364,7 +360,7 @@ void *kbase_vmap_prot(struct kbase_context *kctx, u64 gpu_addr, size_t size,
  * has been imported.
  */
 void *kbase_vmap(struct kbase_context *kctx, u64 gpu_addr, size_t size,
-		struct kbase_vmap_struct *map);
+		 struct kbase_vmap_struct *map);
 
 /**
  * kbase_vunmap - Unmap a GPU VA range from the kernel
@@ -396,8 +392,8 @@ extern const struct vm_operations_struct kbase_vm_ops;
  * Note: The caller shall ensure that CPU mapping is not revoked & remains
  * active whilst the maintenance is in progress.
  */
-void kbase_sync_mem_regions(struct kbase_context *kctx,
-		struct kbase_vmap_struct *map, enum kbase_sync_type dest);
+void kbase_sync_mem_regions(struct kbase_context *kctx, struct kbase_vmap_struct *map,
+			    enum kbase_sync_type dest);
 
 /**
  * kbase_mem_shrink_cpu_mapping - Shrink the CPU mapping(s) of an allocation
@@ -409,9 +405,8 @@ void kbase_sync_mem_regions(struct kbase_context *kctx,
  * Shrink (or completely remove) all CPU mappings which reference the shrunk
  * part of the allocation.
  */
-void kbase_mem_shrink_cpu_mapping(struct kbase_context *kctx,
-		struct kbase_va_region *reg,
-		u64 new_pages, u64 old_pages);
+void kbase_mem_shrink_cpu_mapping(struct kbase_context *kctx, struct kbase_va_region *reg,
+				  u64 new_pages, u64 old_pages);
 
 /**
  * kbase_phy_alloc_mapping_term - Terminate the kernel side mapping of a
@@ -422,8 +417,7 @@ void kbase_mem_shrink_cpu_mapping(struct kbase_context *kctx,
  * This function will unmap the kernel mapping, and free any structures used to
  * track it.
  */
-void kbase_phy_alloc_mapping_term(struct kbase_context *kctx,
-		struct kbase_mem_phy_alloc *alloc);
+void kbase_phy_alloc_mapping_term(struct kbase_context *kctx, struct kbase_mem_phy_alloc *alloc);
 
 /**
  * kbase_phy_alloc_mapping_get - Get a kernel-side CPU pointer to the permanent
@@ -467,7 +461,7 @@ void kbase_phy_alloc_mapping_term(struct kbase_context *kctx,
  * - the region containing @gpu_addr does not support a permanent kernel mapping
  */
 void *kbase_phy_alloc_mapping_get(struct kbase_context *kctx, u64 gpu_addr,
-		struct kbase_vmap_struct **out_kern_mapping);
+				  struct kbase_vmap_struct **out_kern_mapping);
 
 /**
  * kbase_phy_alloc_mapping_put - Put a reference to the kernel-side mapping of a
@@ -489,7 +483,7 @@ void *kbase_phy_alloc_mapping_get(struct kbase_context *kctx, u64 gpu_addr,
  * the physical allocation is still present.
  */
 void kbase_phy_alloc_mapping_put(struct kbase_context *kctx,
-		struct kbase_vmap_struct *kern_mapping);
+				 struct kbase_vmap_struct *kern_mapping);
 
 /**
  * kbase_get_cache_line_alignment - Return cache line alignment
@@ -502,21 +496,6 @@ void kbase_phy_alloc_mapping_put(struct kbase_context *kctx,
  * Return: CPU and GPU cache line alignment, in bytes.
  */
 u32 kbase_get_cache_line_alignment(struct kbase_device *kbdev);
-
-#if (KERNEL_VERSION(4, 20, 0) > LINUX_VERSION_CODE)
-static inline vm_fault_t vmf_insert_pfn_prot(struct vm_area_struct *vma,
-			unsigned long addr, unsigned long pfn, pgprot_t pgprot)
-{
-	int err = vm_insert_pfn_prot(vma, addr, pfn, pgprot);
-
-	if (unlikely(err == -ENOMEM))
-		return VM_FAULT_OOM;
-	if (unlikely(err < 0 && err != -EBUSY))
-		return VM_FAULT_SIGBUS;
-
-	return VM_FAULT_NOPAGE;
-}
-#endif
 
 /**
  * kbase_mem_get_process_mmap_lock - Return the mmap lock for the current process
@@ -532,4 +511,4 @@ static inline struct rw_semaphore *kbase_mem_get_process_mmap_lock(void)
 #endif /* KERNEL_VERSION(5, 8, 0) > LINUX_VERSION_CODE */
 }
 
-#endif				/* _KBASE_MEM_LINUX_H_ */
+#endif /* _KBASE_MEM_LINUX_H_ */

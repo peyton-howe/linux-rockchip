@@ -26,6 +26,8 @@
 #include <mali_kbase.h>
 #include <mali_kbase_native_mgm.h>
 
+#include <thirdparty/mm.h>
+
 /**
  * kbase_native_mgm_alloc - Native physical memory allocation method
  *
@@ -58,9 +60,8 @@ static struct page *kbase_native_mgm_alloc(struct memory_group_manager_device *m
 	 * Check that the mask used for storing the memory group ID is big
 	 * enough for the largest possible memory group ID.
 	 */
-	BUILD_BUG_ON((BASEP_CONTEXT_MMU_GROUP_ID_MASK
-				>> BASEP_CONTEXT_MMU_GROUP_ID_SHIFT)
-			< (BASE_MEM_GROUP_COUNT - 1));
+	BUILD_BUG_ON((BASEP_CONTEXT_MMU_GROUP_ID_MASK >> BASEP_CONTEXT_MMU_GROUP_ID_SHIFT) <
+		     (BASE_MEM_GROUP_COUNT - 1));
 
 	CSTD_UNUSED(mgm_dev);
 	CSTD_UNUSED(group_id);

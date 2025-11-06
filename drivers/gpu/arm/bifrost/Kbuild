@@ -147,6 +147,7 @@ bifrost_kbase-y := \
     mali_kbase_cache_policy.o \
     mali_kbase_ccswe.o \
     mali_kbase_mem.o \
+    mali_kbase_reg_track.o \
     mali_kbase_mem_migrate.o \
     mali_kbase_mem_pool_group.o \
     mali_kbase_native_mgm.o \
@@ -155,7 +156,6 @@ bifrost_kbase-y := \
     mali_kbase_pm.o \
     mali_kbase_config.o \
     mali_kbase_kinstr_prfcnt.o \
-    mali_kbase_vinstr.o \
     mali_kbase_softjobs.o \
     mali_kbase_hw.o \
     mali_kbase_debug.o \
@@ -171,7 +171,6 @@ bifrost_kbase-y := \
     mali_kbase_mem_pool.o \
     mali_kbase_mem_pool_debugfs.o \
     mali_kbase_debugfs_helper.o \
-    mali_kbase_strings.o \
     mali_kbase_as_fault_debugfs.o \
     mali_kbase_regs_history_debugfs.o \
     mali_kbase_dvfs_debugfs.o \
@@ -187,6 +186,10 @@ bifrost_kbase-$(CONFIG_SYNC_FILE) += \
     mali_kbase_fence_ops.o \
     mali_kbase_sync_file.o \
     mali_kbase_sync_common.o
+
+bifrost_kbase-$(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) += \
+        mali_power_gpu_work_period_trace.o \
+        mali_kbase_gpu_metrics.o
 
 ifneq ($(CONFIG_MALI_CSF_SUPPORT),y)
     bifrost_kbase-y += \
@@ -216,6 +219,7 @@ INCLUDE_SUBDIR = \
     $(src)/tl/Kbuild \
     $(src)/hwcnt/Kbuild \
     $(src)/gpu/Kbuild \
+    $(src)/hw_access/Kbuild \
     $(src)/thirdparty/Kbuild \
     $(src)/platform/$(MALI_PLATFORM_DIR)/Kbuild
 

@@ -44,14 +44,10 @@ static const struct rtw89_hfc_param_ini rtw8852b_hfc_param_ini_pcie[] = {
 };
 
 static const struct rtw89_dle_mem rtw8852b_dle_mem_pcie[] = {
-	[RTW89_QTA_SCC] = {RTW89_QTA_SCC, &rtw89_mac_size.wde_size7,
-			   &rtw89_mac_size.ple_size6, &rtw89_mac_size.wde_qt7,
-			   &rtw89_mac_size.wde_qt7, &rtw89_mac_size.ple_qt18,
+	[RTW89_QTA_SCC] = {RTW89_QTA_SCC, &rtw89_mac_size.wde_size6,
+			   &rtw89_mac_size.ple_size6, &rtw89_mac_size.wde_qt6,
+			   &rtw89_mac_size.wde_qt6, &rtw89_mac_size.ple_qt18,
 			   &rtw89_mac_size.ple_qt58},
-	[RTW89_QTA_WOW] = {RTW89_QTA_WOW, &rtw89_mac_size.wde_size7,
-			   &rtw89_mac_size.ple_size6, &rtw89_mac_size.wde_qt7,
-			   &rtw89_mac_size.wde_qt7, &rtw89_mac_size.ple_qt18,
-			   &rtw89_mac_size.ple_qt_52b_wow},
 	[RTW89_QTA_DLFW] = {RTW89_QTA_DLFW, &rtw89_mac_size.wde_size9,
 			    &rtw89_mac_size.ple_size8, &rtw89_mac_size.wde_qt4,
 			    &rtw89_mac_size.wde_qt4, &rtw89_mac_size.ple_qt13,
@@ -2431,21 +2427,11 @@ static const struct rtw89_chip_ops rtw8852b_chip_ops = {
 	.btc_set_policy		= rtw89_btc_set_policy,
 };
 
-#ifdef CONFIG_PM
-static const struct wiphy_wowlan_support rtw_wowlan_stub_8852b = {
-	.flags = WIPHY_WOWLAN_MAGIC_PKT | WIPHY_WOWLAN_DISCONNECT,
-	.n_patterns = RTW89_MAX_PATTERN_NUM,
-	.pattern_max_len = RTW89_MAX_PATTERN_SIZE,
-	.pattern_min_len = 1,
-};
-#endif
-
 const struct rtw89_chip_info rtw8852b_chip_info = {
 	.chip_id		= RTL8852B,
 	.ops			= &rtw8852b_chip_ops,
 	.fw_name		= "rtw89/rtw8852b_fw.bin",
 	.fifo_size		= 196608,
-	.small_fifo_size	= true,
 	.dle_scc_rsvd_size	= 98304,
 	.max_amsdu_limit	= 3500,
 	.dis_2g_40m_ul_ofdma	= true,
@@ -2543,15 +2529,10 @@ const struct rtw89_chip_info rtw8852b_chip_info = {
 	.dma_ch_mask		= BIT(RTW89_DMA_ACH4) | BIT(RTW89_DMA_ACH5) |
 				  BIT(RTW89_DMA_ACH6) | BIT(RTW89_DMA_ACH7) |
 				  BIT(RTW89_DMA_B1MG) | BIT(RTW89_DMA_B1HI),
-	.edcca_lvl_reg		= R_SEG0R_EDCCA_LVL_V1,
-#ifdef CONFIG_PM
-	.wowlan_stub		= &rtw_wowlan_stub_8852b,
-#endif
-	.xtal_info		= NULL,
 };
 EXPORT_SYMBOL(rtw8852b_chip_info);
 
-MODULE_FIRMWARE(RTW8852B_MODULE_FIRMWARE);
+MODULE_FIRMWARE("rtw89/rtw8852b_fw.bin");
 MODULE_AUTHOR("Realtek Corporation");
 MODULE_DESCRIPTION("Realtek 802.11ax wireless 8852B driver");
 MODULE_LICENSE("Dual BSD/GPL");

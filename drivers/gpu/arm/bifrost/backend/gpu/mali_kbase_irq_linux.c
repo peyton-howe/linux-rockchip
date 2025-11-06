@@ -29,7 +29,7 @@
 #if IS_ENABLED(CONFIG_MALI_REAL_HW)
 static void *kbase_tag(void *ptr, u32 tag)
 {
-	return (void *)(((uintptr_t) ptr) | tag);
+	return (void *)(((uintptr_t)ptr) | tag);
 }
 #endif
 
@@ -52,7 +52,7 @@ static irqreturn_t kbase_job_irq_handler(int irq, void *data)
 		return IRQ_NONE;
 	}
 
-	val = kbase_reg_read(kbdev, JOB_CONTROL_REG(JOB_IRQ_STATUS));
+	val = kbase_reg_read32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_STATUS));
 
 	if (!val) {
 		spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
@@ -89,7 +89,7 @@ static irqreturn_t kbase_mmu_irq_handler(int irq, void *data)
 
 	atomic_inc(&kbdev->faults_pending);
 
-	val = kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_STATUS));
+	val = kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_STATUS));
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
@@ -112,7 +112,8 @@ static irqreturn_t kbase_gpuonly_irq_handler(int irq, void *data)
 {
 	unsigned long flags;
 	struct kbase_device *kbdev = kbase_untag(data);
-	u32 val;
+	u32 gpu_irq_status;
+	irqreturn_t irq_state = IRQ_NONE;
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 
@@ -122,18 +123,18 @@ static irqreturn_t kbase_gpuonly_irq_handler(int irq, void *data)
 		return IRQ_NONE;
 	}
 
-	val = kbase_reg_read(kbdev, GPU_CONTROL_REG(GPU_IRQ_STATUS));
+	gpu_irq_status = kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_STATUS));
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
-	if (!val)
-		return IRQ_NONE;
+	if (gpu_irq_status) {
+		dev_dbg(kbdev->dev, "%s: irq %d irqstatus 0x%x\n", __func__, irq, gpu_irq_status);
+		kbase_gpu_interrupt(kbdev, gpu_irq_status);
 
-	dev_dbg(kbdev->dev, "%s: irq %d irqstatus 0x%x\n", __func__, irq, val);
+		irq_state = IRQ_HANDLED;
+	}
 
-	kbase_gpu_interrupt(kbdev, val);
-
-	return IRQ_HANDLED;
+	return irq_state;
 }
 
 /**
@@ -233,7 +234,7 @@ struct kbasep_irq_test {
 
 static struct kbasep_irq_test kbasep_irq_test_data;
 
-#define IRQ_TEST_TIMEOUT    500
+#define IRQ_TEST_TIMEOUT 500
 
 static irqreturn_t kbase_job_irq_test_handler(int irq, void *data)
 {
@@ -249,7 +250,7 @@ static irqreturn_t kbase_job_irq_test_handler(int irq, void *data)
 		return IRQ_NONE;
 	}
 
-	val = kbase_reg_read(kbdev, JOB_CONTROL_REG(JOB_IRQ_STATUS));
+	val = kbase_reg_read32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_STATUS));
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
@@ -261,7 +262,7 @@ static irqreturn_t kbase_job_irq_test_handler(int irq, void *data)
 	kbasep_irq_test_data.triggered = 1;
 	wake_up(&kbasep_irq_test_data.wait);
 
-	kbase_reg_write(kbdev, JOB_CONTROL_REG(JOB_IRQ_CLEAR), val);
+	kbase_reg_write32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_CLEAR), val);
 
 	return IRQ_HANDLED;
 }
@@ -280,7 +281,7 @@ static irqreturn_t kbase_mmu_irq_test_handler(int irq, void *data)
 		return IRQ_NONE;
 	}
 
-	val = kbase_reg_read(kbdev, MMU_REG(MMU_IRQ_STATUS));
+	val = kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_STATUS));
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
@@ -292,15 +293,14 @@ static irqreturn_t kbase_mmu_irq_test_handler(int irq, void *data)
 	kbasep_irq_test_data.triggered = 1;
 	wake_up(&kbasep_irq_test_data.wait);
 
-	kbase_reg_write(kbdev, MMU_REG(MMU_IRQ_CLEAR), val);
+	kbase_reg_write32(kbdev, MMU_CONTROL_ENUM(IRQ_CLEAR), val);
 
 	return IRQ_HANDLED;
 }
 
 static enum hrtimer_restart kbasep_test_interrupt_timeout(struct hrtimer *timer)
 {
-	struct kbasep_irq_test *test_data = container_of(timer,
-						struct kbasep_irq_test, timer);
+	struct kbasep_irq_test *test_data = container_of(timer, struct kbasep_irq_test, timer);
 
 	test_data->timeout = 1;
 	test_data->triggered = 1;
@@ -348,9 +348,9 @@ static int validate_interrupt(struct kbase_device *const kbdev, u32 tag)
 	}
 
 	/* store old mask */
-	old_mask_val = kbase_reg_read(kbdev, mask_offset);
+	old_mask_val = kbase_reg_read32(kbdev, mask_offset);
 	/* mask interrupts */
-	kbase_reg_write(kbdev, mask_offset, 0x0);
+	kbase_reg_write32(kbdev, mask_offset, 0x0);
 
 	if (kbdev->irqs[irq].irq) {
 		/* release original handler and install test handler */
@@ -358,21 +358,18 @@ static int validate_interrupt(struct kbase_device *const kbdev, u32 tag)
 			err = -EINVAL;
 		} else {
 			kbasep_irq_test_data.timeout = 0;
-			hrtimer_init(&kbasep_irq_test_data.timer,
-					CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-			kbasep_irq_test_data.timer.function =
-						kbasep_test_interrupt_timeout;
+			hrtimer_init(&kbasep_irq_test_data.timer, CLOCK_MONOTONIC,
+				     HRTIMER_MODE_REL);
+			kbasep_irq_test_data.timer.function = kbasep_test_interrupt_timeout;
 
 			/* trigger interrupt */
-			kbase_reg_write(kbdev, mask_offset, 0x1);
-			kbase_reg_write(kbdev, rawstat_offset, 0x1);
+			kbase_reg_write32(kbdev, mask_offset, 0x1);
+			kbase_reg_write32(kbdev, rawstat_offset, 0x1);
 
 			hrtimer_start(&kbasep_irq_test_data.timer,
-					HR_TIMER_DELAY_MSEC(IRQ_TEST_TIMEOUT),
-					HRTIMER_MODE_REL);
+				      HR_TIMER_DELAY_MSEC(IRQ_TEST_TIMEOUT), HRTIMER_MODE_REL);
 
-			wait_event(kbasep_irq_test_data.wait,
-					kbasep_irq_test_data.triggered != 0);
+			wait_event(kbasep_irq_test_data.wait, kbasep_irq_test_data.triggered != 0);
 
 			if (kbasep_irq_test_data.timeout != 0) {
 				dev_err(kbdev->dev, "Interrupt %u (index %u) didn't reach CPU.\n",
@@ -387,7 +384,7 @@ static int validate_interrupt(struct kbase_device *const kbdev, u32 tag)
 			kbasep_irq_test_data.triggered = 0;
 
 			/* mask interrupts */
-			kbase_reg_write(kbdev, mask_offset, 0x0);
+			kbase_reg_write32(kbdev, mask_offset, 0x0);
 
 			/* release test handler */
 			free_irq(kbdev->irqs[irq].irq, kbase_tag(kbdev, irq));
@@ -403,7 +400,7 @@ static int validate_interrupt(struct kbase_device *const kbdev, u32 tag)
 		}
 	}
 	/* restore old mask */
-	kbase_reg_write(kbdev, mask_offset, old_mask_val);
+	kbase_reg_write32(kbdev, mask_offset, old_mask_val);
 
 	return err;
 }
@@ -421,19 +418,21 @@ int kbase_validate_interrupts(struct kbase_device *const kbdev)
 
 	err = validate_interrupt(kbdev, JOB_IRQ_TAG);
 	if (err) {
-		dev_err(kbdev->dev, "Interrupt JOB_IRQ didn't reach CPU. Check interrupt assignments.\n");
+		dev_err(kbdev->dev,
+			"Interrupt JOB_IRQ didn't reach CPU. Check interrupt assignments.\n");
 		goto out;
 	}
 
 	err = validate_interrupt(kbdev, MMU_IRQ_TAG);
 	if (err) {
-		dev_err(kbdev->dev, "Interrupt MMU_IRQ didn't reach CPU. Check interrupt assignments.\n");
+		dev_err(kbdev->dev,
+			"Interrupt MMU_IRQ didn't reach CPU. Check interrupt assignments.\n");
 		goto out;
 	}
 
 	dev_dbg(kbdev->dev, "Interrupts are correctly assigned.\n");
 
- out:
+out:
 	kbase_pm_context_idle(kbdev);
 
 	return err;

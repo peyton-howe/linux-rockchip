@@ -34,6 +34,8 @@ int kbase_ktrace_init(struct kbase_device *kbdev)
 		return -EINVAL;
 
 	kbdev->ktrace.rbuf = rbuf;
+#else
+	CSTD_UNUSED(kbdev);
 #endif /* KBASE_KTRACE_TARGET_RBUF */
 	return 0;
 }
@@ -43,6 +45,8 @@ void kbase_ktrace_term(struct kbase_device *kbdev)
 #if KBASE_KTRACE_TARGET_RBUF
 	kfree(kbdev->ktrace.rbuf);
 	kbdev->ktrace.rbuf = NULL;
+#else
+	CSTD_UNUSED(kbdev);
 #endif /* KBASE_KTRACE_TARGET_RBUF */
 }
 
@@ -55,14 +59,14 @@ void kbase_ktrace_hook_wrapper(void *param)
 
 #if KBASE_KTRACE_TARGET_RBUF
 
-static const char * const kbasep_ktrace_code_string[] = {
-	/*
+static const char *const kbasep_ktrace_code_string[] = {
+/*
 	 * IMPORTANT: USE OF SPECIAL #INCLUDE OF NON-STANDARD HEADER FILE
 	 * THIS MUST BE USED AT THE START OF THE ARRAY
 	 */
-#define KBASE_KTRACE_CODE_MAKE_CODE(X) # X
+#define KBASE_KTRACE_CODE_MAKE_CODE(X) #X
 #include "debug/mali_kbase_debug_ktrace_codes.h"
-#undef  KBASE_KTRACE_CODE_MAKE_CODE
+#undef KBASE_KTRACE_CODE_MAKE_CODE
 };
 
 static void kbasep_ktrace_format_header(char *buffer, int sz, s32 written)
@@ -81,8 +85,7 @@ static void kbasep_ktrace_format_header(char *buffer, int sz, s32 written)
 	buffer[sz - 1] = 0;
 }
 
-static void kbasep_ktrace_format_msg(struct kbase_ktrace_msg *trace_msg,
-		char *buffer, int sz)
+static void kbasep_ktrace_format_msg(struct kbase_ktrace_msg *trace_msg, char *buffer, int sz)
 {
 	s32 written = 0;
 
@@ -107,8 +110,7 @@ static void kbasep_ktrace_format_msg(struct kbase_ktrace_msg *trace_msg,
 	written += MAX(scnprintf(buffer + written, (size_t)MAX(sz - written, 0), ","), 0);
 
 	/* Backend parts */
-	kbasep_ktrace_backend_format_msg(trace_msg, buffer, sz,
-			&written);
+	kbasep_ktrace_backend_format_msg(trace_msg, buffer, sz, &written);
 
 	/* Rest of message:
 	 *
@@ -123,8 +125,7 @@ static void kbasep_ktrace_format_msg(struct kbase_ktrace_msg *trace_msg,
 	buffer[sz - 1] = 0;
 }
 
-static void kbasep_ktrace_dump_msg(struct kbase_device *kbdev,
-		struct kbase_ktrace_msg *trace_msg)
+static void kbasep_ktrace_dump_msg(struct kbase_device *kbdev, struct kbase_ktrace_msg *trace_msg)
 {
 	char buffer[KTRACE_DUMP_MESSAGE_SIZE];
 
@@ -149,10 +150,9 @@ struct kbase_ktrace_msg *kbasep_ktrace_reserve(struct kbase_ktrace *ktrace)
 
 	return trace_msg;
 }
-void kbasep_ktrace_msg_init(struct kbase_ktrace *ktrace,
-		struct kbase_ktrace_msg *trace_msg, enum kbase_ktrace_code code,
-		struct kbase_context *kctx, kbase_ktrace_flag_t flags,
-		u64 info_val)
+void kbasep_ktrace_msg_init(struct kbase_ktrace *ktrace, struct kbase_ktrace_msg *trace_msg,
+			    enum kbase_ktrace_code code, struct kbase_context *kctx,
+			    kbase_ktrace_flag_t flags, u64 info_val)
 {
 	lockdep_assert_held(&ktrace->lock);
 
@@ -177,8 +177,7 @@ void kbasep_ktrace_msg_init(struct kbase_ktrace *ktrace,
 }
 
 void kbasep_ktrace_add(struct kbase_device *kbdev, enum kbase_ktrace_code code,
-		struct kbase_context *kctx, kbase_ktrace_flag_t flags,
-		u64 info_val)
+		       struct kbase_context *kctx, kbase_ktrace_flag_t flags, u64 info_val)
 {
 	unsigned long irqflags;
 	struct kbase_ktrace_msg *trace_msg;
@@ -194,8 +193,7 @@ void kbasep_ktrace_add(struct kbase_device *kbdev, enum kbase_ktrace_code code,
 	trace_msg = kbasep_ktrace_reserve(&kbdev->ktrace);
 
 	/* Fill the common part of the message (including backend.gpu.flags) */
-	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags,
-			info_val);
+	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags, info_val);
 
 	/* Done */
 	spin_unlock_irqrestore(&kbdev->ktrace.lock, irqflags);
@@ -253,7 +251,7 @@ struct trace_seq_state {
 static void *kbasep_ktrace_seq_start(struct seq_file *s, loff_t *pos)
 {
 	struct trace_seq_state *state = s->private;
-	int i;
+	unsigned int i;
 
 	if (*pos == 0)
 		/* See Documentation/filesystems/seq_file.txt */
@@ -262,8 +260,7 @@ static void *kbasep_ktrace_seq_start(struct seq_file *s, loff_t *pos)
 	if (*pos > KBASE_KTRACE_SIZE)
 		return NULL;
 	i = state->start + *pos;
-	if ((state->end >= state->start && i >= state->end) ||
-			i >= state->end + KBASE_KTRACE_SIZE)
+	if ((state->end >= state->start && i >= state->end) || i >= state->end + KBASE_KTRACE_SIZE)
 		return NULL;
 
 	i &= KBASE_KTRACE_MASK;
@@ -273,12 +270,14 @@ static void *kbasep_ktrace_seq_start(struct seq_file *s, loff_t *pos)
 
 static void kbasep_ktrace_seq_stop(struct seq_file *s, void *data)
 {
+	CSTD_UNUSED(s);
+	CSTD_UNUSED(data);
 }
 
 static void *kbasep_ktrace_seq_next(struct seq_file *s, void *data, loff_t *pos)
 {
 	struct trace_seq_state *state = s->private;
-	int i;
+	unsigned int i;
 
 	if (data != SEQ_START_TOKEN)
 		(*pos)++;
@@ -319,8 +318,7 @@ static int kbasep_ktrace_debugfs_open(struct inode *inode, struct file *file)
 
 	struct trace_seq_state *state;
 
-	state = __seq_open_private(file, &kbasep_ktrace_seq_ops,
-			sizeof(*state));
+	state = __seq_open_private(file, &kbasep_ktrace_seq_ops, sizeof(*state));
 	if (!state)
 		return -ENOMEM;
 
@@ -343,9 +341,8 @@ static const struct file_operations kbasep_ktrace_debugfs_fops = {
 
 void kbase_ktrace_debugfs_init(struct kbase_device *kbdev)
 {
-	debugfs_create_file("mali_trace", 0444,
-			kbdev->mali_debugfs_directory, kbdev,
-			&kbasep_ktrace_debugfs_fops);
+	debugfs_create_file("mali_trace", 0444, kbdev->mali_debugfs_directory, kbdev,
+			    &kbasep_ktrace_debugfs_fops);
 }
 #endif /* CONFIG_DEBUG_FS */
 

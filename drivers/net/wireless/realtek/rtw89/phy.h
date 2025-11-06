@@ -7,6 +7,7 @@
 
 #include "core.h"
 
+#define RTW89_PHY_ADDR_OFFSET	0x10000
 #define RTW89_RF_ADDR_ADSEL_MASK  BIT(16)
 
 #define get_phy_headline(addr)		FIELD_GET(GENMASK(31, 28), addr)
@@ -331,122 +332,58 @@ struct rtw89_nbi_reg_def {
 static inline void rtw89_phy_write8(struct rtw89_dev *rtwdev,
 				    u32 addr, u8 data)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write8(rtwdev, addr + phy->cr_base, data);
+	rtw89_write8(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, data);
 }
 
 static inline void rtw89_phy_write16(struct rtw89_dev *rtwdev,
 				     u32 addr, u16 data)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write16(rtwdev, addr + phy->cr_base, data);
+	rtw89_write16(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, data);
 }
 
 static inline void rtw89_phy_write32(struct rtw89_dev *rtwdev,
 				     u32 addr, u32 data)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write32(rtwdev, addr + phy->cr_base, data);
+	rtw89_write32(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, data);
 }
 
 static inline void rtw89_phy_write32_set(struct rtw89_dev *rtwdev,
 					 u32 addr, u32 bits)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write32_set(rtwdev, addr + phy->cr_base, bits);
+	rtw89_write32_set(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, bits);
 }
 
 static inline void rtw89_phy_write32_clr(struct rtw89_dev *rtwdev,
 					 u32 addr, u32 bits)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write32_clr(rtwdev, addr + phy->cr_base, bits);
+	rtw89_write32_clr(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, bits);
 }
 
 static inline void rtw89_phy_write32_mask(struct rtw89_dev *rtwdev,
 					  u32 addr, u32 mask, u32 data)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	rtw89_write32_mask(rtwdev, addr + phy->cr_base, mask, data);
+	rtw89_write32_mask(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, mask, data);
 }
 
 static inline u8 rtw89_phy_read8(struct rtw89_dev *rtwdev, u32 addr)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	return rtw89_read8(rtwdev, addr + phy->cr_base);
+	return rtw89_read8(rtwdev, addr | RTW89_PHY_ADDR_OFFSET);
 }
 
 static inline u16 rtw89_phy_read16(struct rtw89_dev *rtwdev, u32 addr)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	return rtw89_read16(rtwdev, addr + phy->cr_base);
+	return rtw89_read16(rtwdev, addr | RTW89_PHY_ADDR_OFFSET);
 }
 
 static inline u32 rtw89_phy_read32(struct rtw89_dev *rtwdev, u32 addr)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	return rtw89_read32(rtwdev, addr + phy->cr_base);
+	return rtw89_read32(rtwdev, addr | RTW89_PHY_ADDR_OFFSET);
 }
 
 static inline u32 rtw89_phy_read32_mask(struct rtw89_dev *rtwdev,
 					u32 addr, u32 mask)
 {
-	const struct rtw89_phy_gen_def *phy = rtwdev->chip->phy_def;
-
-	return rtw89_read32_mask(rtwdev, addr + phy->cr_base, mask);
-}
-
-static inline
-enum rtw89_gain_offset rtw89_subband_to_gain_offset_band_of_ofdm(enum rtw89_subband subband)
-{
-	switch (subband) {
-	default:
-	case RTW89_CH_2G:
-		return RTW89_GAIN_OFFSET_2G_OFDM;
-	case RTW89_CH_5G_BAND_1:
-		return RTW89_GAIN_OFFSET_5G_LOW;
-	case RTW89_CH_5G_BAND_3:
-		return RTW89_GAIN_OFFSET_5G_MID;
-	case RTW89_CH_5G_BAND_4:
-		return RTW89_GAIN_OFFSET_5G_HIGH;
-	}
-}
-
-static inline
-enum rtw89_phy_bb_gain_band rtw89_subband_to_bb_gain_band(enum rtw89_subband subband)
-{
-	switch (subband) {
-	default:
-	case RTW89_CH_2G:
-		return RTW89_BB_GAIN_BAND_2G;
-	case RTW89_CH_5G_BAND_1:
-		return RTW89_BB_GAIN_BAND_5G_L;
-	case RTW89_CH_5G_BAND_3:
-		return RTW89_BB_GAIN_BAND_5G_M;
-	case RTW89_CH_5G_BAND_4:
-		return RTW89_BB_GAIN_BAND_5G_H;
-	case RTW89_CH_6G_BAND_IDX0:
-	case RTW89_CH_6G_BAND_IDX1:
-		return RTW89_BB_GAIN_BAND_6G_L;
-	case RTW89_CH_6G_BAND_IDX2:
-	case RTW89_CH_6G_BAND_IDX3:
-		return RTW89_BB_GAIN_BAND_6G_M;
-	case RTW89_CH_6G_BAND_IDX4:
-	case RTW89_CH_6G_BAND_IDX5:
-		return RTW89_BB_GAIN_BAND_6G_H;
-	case RTW89_CH_6G_BAND_IDX6:
-	case RTW89_CH_6G_BAND_IDX7:
-		return RTW89_BB_GAIN_BAND_6G_UH;
-	}
+	return rtw89_read32_mask(rtwdev, addr | RTW89_PHY_ADDR_OFFSET, mask);
 }
 
 static inline
@@ -612,10 +549,6 @@ void rtw89_phy_set_phy_regs(struct rtw89_dev *rtwdev, u32 addr, u32 mask,
 void rtw89_phy_dig_reset(struct rtw89_dev *rtwdev);
 void rtw89_phy_dig(struct rtw89_dev *rtwdev);
 void rtw89_phy_tx_path_div_track(struct rtw89_dev *rtwdev);
-void rtw89_phy_antdiv_parse(struct rtw89_dev *rtwdev,
-			    struct rtw89_rx_phy_ppdu *phy_ppdu);
-void rtw89_phy_antdiv_track(struct rtw89_dev *rtwdev);
-void rtw89_phy_antdiv_work(struct work_struct *work);
 void rtw89_phy_set_bss_color(struct rtw89_dev *rtwdev, struct ieee80211_vif *vif);
 void rtw89_phy_tssi_ctrl_set_bandedge_cfg(struct rtw89_dev *rtwdev,
 					  enum rtw89_mac_idx mac_idx,

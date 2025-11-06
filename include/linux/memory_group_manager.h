@@ -116,9 +116,8 @@ struct memory_group_manager_ops {
 	 * Return: The memory group ID to use when mapping pages from this
 	 *         imported memory.
 	 */
-	int (*mgm_get_import_memory_id)(
-		struct memory_group_manager_device *mgm_dev,
-		struct memory_group_manager_import_data *import_data);
+	int (*mgm_get_import_memory_id)(struct memory_group_manager_device *mgm_dev,
+					struct memory_group_manager_import_data *import_data);
 
 	/*
 	 * mgm_update_gpu_pte - Modify a GPU page table entry for a memory group
@@ -234,10 +233,7 @@ struct memory_group_manager_device {
 	struct module *owner;
 };
 
-
-enum memory_group_manager_import_type {
-	MEMORY_GROUP_MANAGER_IMPORT_TYPE_DMA_BUF
-};
+enum memory_group_manager_import_type { MEMORY_GROUP_MANAGER_IMPORT_TYPE_DMA_BUF };
 
 /**
  * struct memory_group_manager_import_data - Structure describing the imported

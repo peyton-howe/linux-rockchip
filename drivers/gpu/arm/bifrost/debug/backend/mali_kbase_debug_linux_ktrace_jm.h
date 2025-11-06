@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2014, 2018, 2020-2021 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2023 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -107,28 +107,20 @@ DEFINE_MALI_JM_REFCOUNT_EVENT(JS_POLICY_FOREACH_CTX_JOBS);
 #undef DEFINE_MALI_JM_REFCOUNT_EVENT
 
 DECLARE_EVENT_CLASS(mali_jm_add_template,
-	TP_PROTO(struct kbase_context *kctx, u64 gpu_addr, u64 info_val),
-	TP_ARGS(kctx, gpu_addr, info_val),
-	TP_STRUCT__entry(
-		__field(pid_t, kctx_tgid)
-		__field(u32, kctx_id)
-		__field(u64, gpu_addr)
-		__field(u64, info_val)
-	),
-	TP_fast_assign(
-		__entry->kctx_id = (kctx) ? kctx->id : 0u;
-		__entry->kctx_tgid = (kctx) ? kctx->tgid : 0;
-		__entry->gpu_addr = gpu_addr;
-		__entry->info_val = info_val;
-	),
-	TP_printk("kctx=%d_%u gpu_addr=0x%llx info=0x%llx", __entry->kctx_tgid,
-			__entry->kctx_id, __entry->gpu_addr, __entry->info_val)
-);
+		    TP_PROTO(struct kbase_context *kctx, u64 gpu_addr, u64 info_val),
+		    TP_ARGS(kctx, gpu_addr, info_val),
+		    TP_STRUCT__entry(__field(pid_t, kctx_tgid) __field(u32, kctx_id)
+					     __field(u64, gpu_addr) __field(u64, info_val)),
+		    TP_fast_assign(__entry->kctx_id = (kctx) ? kctx->id : 0u;
+				   __entry->kctx_tgid = (kctx) ? kctx->tgid : 0;
+				   __entry->gpu_addr = gpu_addr; __entry->info_val = info_val;),
+		    TP_printk("kctx=%d_%u gpu_addr=0x%llx info=0x%llx", __entry->kctx_tgid,
+			      __entry->kctx_id, __entry->gpu_addr, __entry->info_val));
 
-#define DEFINE_MALI_JM_ADD_EVENT(name) \
-DEFINE_EVENT(mali_jm_add_template, mali_##name, \
-	TP_PROTO(struct kbase_context *kctx, u64 gpu_addr, u64 info_val), \
-	TP_ARGS(kctx, gpu_addr, info_val))
+#define DEFINE_MALI_JM_ADD_EVENT(name)                                                 \
+	DEFINE_EVENT(mali_jm_add_template, mali_##name,                                \
+		     TP_PROTO(struct kbase_context *kctx, u64 gpu_addr, u64 info_val), \
+		     TP_ARGS(kctx, gpu_addr, info_val))
 DEFINE_MALI_JM_ADD_EVENT(JD_DONE_WORKER);
 DEFINE_MALI_JM_ADD_EVENT(JD_DONE_WORKER_END);
 DEFINE_MALI_JM_ADD_EVENT(JD_CANCEL_WORKER);

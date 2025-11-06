@@ -148,17 +148,17 @@ static ssize_t is_enabled_show(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RO(is_enabled);
 
-#define CS_ITM_DWT_REG_ATTR_RW(_a, _b)                                                             \
-	static ssize_t _a##_show(struct device *dev, struct device_attribute *attr,                \
-				 char *const buf)                                                  \
-	{                                                                                          \
-		return sprintf(buf, "%#x\n", itm_state.regs[CS_##_b]);                             \
-	}                                                                                          \
-	static ssize_t _a##_store(struct device *dev, struct device_attribute *attr,               \
-				  const char *buf, size_t count)                                   \
-	{                                                                                          \
-		return verify_store_reg(dev, buf, count, CS_##_b);                                 \
-	}                                                                                          \
+#define CS_ITM_DWT_REG_ATTR_RW(_a, _b)                                               \
+	static ssize_t _a##_show(struct device *dev, struct device_attribute *attr,  \
+				 char *const buf)                                    \
+	{                                                                            \
+		return sprintf(buf, "%#x\n", itm_state.regs[CS_##_b]);               \
+	}                                                                            \
+	static ssize_t _a##_store(struct device *dev, struct device_attribute *attr, \
+				  const char *buf, size_t count)                     \
+	{                                                                            \
+		return verify_store_reg(dev, buf, count, CS_##_b);                   \
+	}                                                                            \
 	static DEVICE_ATTR_RW(_a)
 
 CS_ITM_DWT_REG_ATTR_RW(dwt_ctrl, DWT_CTRL);

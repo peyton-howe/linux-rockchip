@@ -45,7 +45,11 @@
 
 #if KERNEL_VERSION(4, 16, 0) > LINUX_VERSION_CODE
 typedef unsigned int __poll_t;
+
+#ifndef HRTIMER_MODE_REL_SOFT
+#define HRTIMER_MODE_REL_SOFT HRTIMER_MODE_REL
 #endif
+#endif /* KERNEL_VERSION(4, 16, 0) > LINUX_VERSION_CODE */
 
 #if KERNEL_VERSION(4, 9, 78) >= LINUX_VERSION_CODE
 
@@ -81,17 +85,20 @@ typedef unsigned int __poll_t;
 /* Replace the default definition with CONFIG_LSM_MMAP_MIN_ADDR */
 #undef kbase_mmap_min_addr
 #define kbase_mmap_min_addr CONFIG_LSM_MMAP_MIN_ADDR
-#pragma message "kbase_mmap_min_addr compiled to CONFIG_LSM_MMAP_MIN_ADDR, no runtime update!"
+#define KBASE_COMPILED_MMAP_MIN_ADDR_MSG \
+	"* MALI kbase_mmap_min_addr compiled to CONFIG_LSM_MMAP_MIN_ADDR, no runtime update possible! *"
 #endif /* (CONFIG_LSM_MMAP_MIN_ADDR > CONFIG_DEFAULT_MMAP_MIN_ADDR) */
 #endif /* CONFIG_LSM_MMAP_MIN_ADDR */
 
 #if (kbase_mmap_min_addr == CONFIG_DEFAULT_MMAP_MIN_ADDR)
-#pragma message "kbase_mmap_min_addr compiled to CONFIG_LSM_MMAP_MIN_ADDR, no runtime update!"
+#define KBASE_COMPILED_MMAP_MIN_ADDR_MSG \
+	"* MALI kbase_mmap_min_addr compiled to CONFIG_DEFAULT_MMAP_MIN_ADDR, no runtime update possible! *"
 #endif
 
 #else /* CONFIG_MMU */
 #define kbase_mmap_min_addr (0UL)
-#pragma message "kbase_mmap_min_addr compiled to CONFIG_LSM_MMAP_MIN_ADDR, no runtime update!"
+#define KBASE_COMPILED_MMAP_MIN_ADDR_MSG \
+	"* MALI kbase_mmap_min_addr compiled to (0UL), no runtime update possible! *"
 #endif /* CONFIG_MMU */
 #endif /* KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE */
 

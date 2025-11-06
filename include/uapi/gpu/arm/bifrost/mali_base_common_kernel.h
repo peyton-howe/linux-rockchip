@@ -203,13 +203,13 @@ typedef __u32 base_context_create_flags;
 
 /* Bitmask used to encode a memory group ID in base_context_create_flags
  */
-#define BASEP_CONTEXT_MMU_GROUP_ID_MASK                                                            \
+#define BASEP_CONTEXT_MMU_GROUP_ID_MASK \
 	((base_context_create_flags)0xF << BASEP_CONTEXT_MMU_GROUP_ID_SHIFT)
 
 /* Bitpattern describing the base_context_create_flags that can be
  * passed to the kernel
  */
-#define BASEP_CONTEXT_CREATE_KERNEL_FLAGS                                                          \
+#define BASEP_CONTEXT_CREATE_KERNEL_FLAGS \
 	(BASE_CONTEXT_SYSTEM_MONITOR_SUBMIT_DISABLED | BASEP_CONTEXT_MMU_GROUP_ID_MASK)
 
 /* Flags for base tracepoint

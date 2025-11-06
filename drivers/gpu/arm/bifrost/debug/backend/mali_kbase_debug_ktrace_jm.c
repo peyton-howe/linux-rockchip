@@ -32,8 +32,8 @@ void kbasep_ktrace_backend_format_header(char *buffer, int sz, s32 *written)
 			0);
 }
 
-void kbasep_ktrace_backend_format_msg(struct kbase_ktrace_msg *trace_msg,
-		char *buffer, int sz, s32 *written)
+void kbasep_ktrace_backend_format_msg(struct kbase_ktrace_msg *trace_msg, char *buffer, int sz,
+				      s32 *written)
 {
 	/* katom */
 	if (trace_msg->backend.gpu.flags & KBASE_KTRACE_FLAG_JM_ATOM)
@@ -85,8 +85,7 @@ void kbasep_ktrace_add_jm(struct kbase_device *kbdev, enum kbase_ktrace_code cod
 	trace_msg = kbasep_ktrace_reserve(&kbdev->ktrace);
 
 	/* Fill the common part of the message (including backend.gpu.flags) */
-	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags,
-			info_val);
+	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags, info_val);
 
 	/* Indicate to the common code that backend-specific parts will be
 	 * valid
@@ -97,8 +96,7 @@ void kbasep_ktrace_add_jm(struct kbase_device *kbdev, enum kbase_ktrace_code cod
 	if (katom) {
 		trace_msg->backend.gpu.flags |= KBASE_KTRACE_FLAG_JM_ATOM;
 
-		trace_msg->backend.gpu.atom_number =
-			kbase_jd_atom_id(katom->kctx, katom);
+		trace_msg->backend.gpu.atom_number = kbase_jd_atom_id(katom->kctx, katom);
 		trace_msg->backend.gpu.atom_udata[0] = katom->udata.blob[0];
 		trace_msg->backend.gpu.atom_udata[1] = katom->udata.blob[1];
 	}

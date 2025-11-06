@@ -87,7 +87,7 @@ bob_kernel_module {
     ],
     srcs: [
         "sources/ela/coresight_mali_source_ela_core.c",
-        "sources/ela/coresight-ela600.h"
+        "sources/ela/coresight-ela600.h",
     ],
     extra_symbols: [
         "mali_kbase",

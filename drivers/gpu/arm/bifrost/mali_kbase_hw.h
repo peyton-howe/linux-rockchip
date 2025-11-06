@@ -33,8 +33,7 @@
  * @kbdev: Device pointer
  * @issue: issue to be checked
  */
-#define kbase_hw_has_issue(kbdev, issue)\
-	test_bit(issue, &(kbdev)->hw_issues_mask[0])
+#define kbase_hw_has_issue(kbdev, issue) test_bit(issue, &(kbdev)->hw_issues_mask[0])
 
 /**
  * kbase_hw_has_feature - Tell whether a feature is supported

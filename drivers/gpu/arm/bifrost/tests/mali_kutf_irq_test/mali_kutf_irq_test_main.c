@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2016-2018, 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2016-2023 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -121,13 +121,11 @@ static irqreturn_t kbase_gpu_irq_custom_handler(int irq, void *data)
  *
  * Return: Fixture data created on success or NULL on failure
  */
-static void *mali_kutf_irq_default_create_fixture(
-		struct kutf_context *context)
+static void *mali_kutf_irq_default_create_fixture(struct kutf_context *context)
 {
 	struct kutf_irq_fixture_data *data;
 
-	data = kutf_mempool_alloc(&context->fixture_pool,
-			sizeof(struct kutf_irq_fixture_data));
+	data = kutf_mempool_alloc(&context->fixture_pool, sizeof(struct kutf_irq_fixture_data));
 
 	if (!data)
 		goto fail;
@@ -151,8 +149,7 @@ fail:
  *
  * @context:             KUTF context.
  */
-static void mali_kutf_irq_default_remove_fixture(
-		struct kutf_context *context)
+static void mali_kutf_irq_default_remove_fixture(struct kutf_context *context)
 {
 	struct kutf_irq_fixture_data *data = context->fixture;
 	struct kbase_device *kbdev = data->kbdev;
@@ -224,14 +221,16 @@ static void mali_kutf_irq_latency(struct kutf_context *context)
 
 	if (i > NR_TEST_IRQS) {
 		do_div(average_time, NR_TEST_IRQS);
-		results = kutf_dsprintf(&context->fixture_pool,
-				"Min latency = %lldns, Max latency = %lldns, Average latency = %lldns\n",
-				min_time, max_time, average_time);
+		results = kutf_dsprintf(
+			&context->fixture_pool,
+			"Min latency = %lldns, Max latency = %lldns, Average latency = %lldns\n",
+			min_time, max_time, average_time);
 		kutf_test_pass(context, results);
 	} else {
-		results = kutf_dsprintf(&context->fixture_pool,
-				"Timed out for the %u-th IRQ (loop_limit: %u), triggered late: %d\n",
-				i, NR_TEST_IRQS, triggered);
+		results = kutf_dsprintf(
+			&context->fixture_pool,
+			"Timed out for the %u-th IRQ (loop_limit: %u), triggered late: %d\n", i,
+			NR_TEST_IRQS, triggered);
 		kutf_test_fail(context, results);
 	}
 }
@@ -252,9 +251,8 @@ static int __init mali_kutf_irq_test_main_init(void)
 		return -ENOMEM;
 	}
 
-	suite = kutf_create_suite(irq_app, "irq_default",
-			1, mali_kutf_irq_default_create_fixture,
-			mali_kutf_irq_default_remove_fixture);
+	suite = kutf_create_suite(irq_app, "irq_default", 1, mali_kutf_irq_default_create_fixture,
+				  mali_kutf_irq_default_remove_fixture);
 
 	if (suite == NULL) {
 		pr_warn("Creation of test suite failed!\n");
@@ -262,8 +260,7 @@ static int __init mali_kutf_irq_test_main_init(void)
 		return -ENOMEM;
 	}
 
-	kutf_add_test(suite, 0x0, "irq_latency",
-			mali_kutf_irq_latency);
+	kutf_add_test(suite, 0x0, "irq_latency", mali_kutf_irq_latency);
 	return 0;
 }
 

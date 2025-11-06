@@ -32,10 +32,10 @@ void kbasep_ktrace_backend_format_header(char *buffer, int sz, s32 *written)
 			0);
 }
 
-void kbasep_ktrace_backend_format_msg(struct kbase_ktrace_msg *trace_msg,
-		char *buffer, int sz, s32 *written)
+void kbasep_ktrace_backend_format_msg(struct kbase_ktrace_msg *trace_msg, char *buffer, int sz,
+				      s32 *written)
 {
-	const union kbase_ktrace_backend * const be_msg = &trace_msg->backend;
+	const union kbase_ktrace_backend *const be_msg = &trace_msg->backend;
 	/* At present, no need to check for KBASE_KTRACE_FLAG_BACKEND, as the
 	 * other backend-specific flags currently imply this anyway
 	 */
@@ -85,10 +85,9 @@ void kbasep_ktrace_backend_format_msg(struct kbase_ktrace_msg *trace_msg,
 	 */
 }
 
-void kbasep_ktrace_add_csf(struct kbase_device *kbdev,
-		enum kbase_ktrace_code code, struct kbase_queue_group *group,
-		struct kbase_queue *queue, kbase_ktrace_flag_t flags,
-		u64 info_val)
+void kbasep_ktrace_add_csf(struct kbase_device *kbdev, enum kbase_ktrace_code code,
+			   struct kbase_queue_group *group, struct kbase_queue *queue,
+			   kbase_ktrace_flag_t flags, u64 info_val)
 {
 	unsigned long irqflags;
 	struct kbase_ktrace_msg *trace_msg;
@@ -109,8 +108,7 @@ void kbasep_ktrace_add_csf(struct kbase_device *kbdev,
 		kctx = queue->kctx;
 
 	/* Fill the common part of the message (including backend.gpu.flags) */
-	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags,
-			info_val);
+	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, flags, info_val);
 
 	/* Indicate to the common code that backend-specific parts will be
 	 * valid
@@ -136,11 +134,9 @@ void kbasep_ktrace_add_csf(struct kbase_device *kbdev,
 		trace_msg->backend.gpu.csg_nr = slot;
 
 		if (slot >= 0) {
-			struct kbase_csf_csg_slot *csg_slot =
-				&kbdev->csf.scheduler.csg_slots[slot];
+			struct kbase_csf_csg_slot *csg_slot = &kbdev->csf.scheduler.csg_slots[slot];
 
-			trace_msg->backend.gpu.slot_prio =
-				csg_slot->priority;
+			trace_msg->backend.gpu.slot_prio = csg_slot->priority;
 		}
 		/* slot >=0 indicates whether slot_prio valid, so no need to
 		 * initialize in the case where it's invalid
@@ -155,10 +151,9 @@ void kbasep_ktrace_add_csf(struct kbase_device *kbdev,
 	spin_unlock_irqrestore(&kbdev->ktrace.lock, irqflags);
 }
 
-void kbasep_ktrace_add_csf_kcpu(struct kbase_device *kbdev,
-				enum kbase_ktrace_code code,
-				struct kbase_kcpu_command_queue *queue,
-				u64 info_val1, u64 info_val2)
+void kbasep_ktrace_add_csf_kcpu(struct kbase_device *kbdev, enum kbase_ktrace_code code,
+				struct kbase_kcpu_command_queue *queue, u64 info_val1,
+				u64 info_val2)
 {
 	unsigned long irqflags;
 	struct kbase_ktrace_msg *trace_msg;
@@ -173,8 +168,7 @@ void kbasep_ktrace_add_csf_kcpu(struct kbase_device *kbdev,
 	trace_msg = kbasep_ktrace_reserve(&kbdev->ktrace);
 
 	/* Fill the common part of the message */
-	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, 0,
-		info_val1);
+	kbasep_ktrace_msg_init(&kbdev->ktrace, trace_msg, code, kctx, 0, info_val1);
 
 	/* Indicate to the common code that backend-specific parts will be
 	 * valid

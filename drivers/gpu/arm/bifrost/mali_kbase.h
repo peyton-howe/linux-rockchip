@@ -28,6 +28,7 @@
 
 #include <uapi/gpu/arm/bifrost/mali_base_kernel.h>
 #include <mali_kbase_linux.h>
+#include <linux/version_compat_defs.h>
 
 /*
  * Include mali_kbase_defs.h first as this provides types needed by other local
@@ -37,9 +38,7 @@
 
 #include "debug/mali_kbase_debug_ktrace.h"
 #include "context/mali_kbase_context.h"
-#include "mali_kbase_strings.h"
 #include "mali_kbase_mem_lowlevel.h"
-#include "mali_kbase_utility.h"
 #include "mali_kbase_mem.h"
 #include "mmu/mali_kbase_mmu.h"
 #include "mali_kbase_gpu_memory_debugfs.h"
@@ -113,6 +112,14 @@ struct kbase_device *kbase_device_alloc(void);
  * been setup before calling kbase_device_init
  */
 
+/**
+ * kbase_device_misc_init() - Miscellaneous initialization for kbase device
+ * @kbdev: Pointer to the kbase device
+ *
+ * This function must be called only when a kbase device is initialized.
+ *
+ * Return: 0 on success
+ */
 int kbase_device_misc_init(struct kbase_device *kbdev);
 void kbase_device_misc_term(struct kbase_device *kbdev);
 
@@ -167,10 +174,9 @@ void kbase_release_device(struct kbase_device *kbdev);
  * Return: if successful, address of the unmapped area aligned as required;
  *         error code (negative) in case of failure;
  */
-unsigned long kbase_context_get_unmapped_area(struct kbase_context *kctx,
-		const unsigned long addr, const unsigned long len,
-		const unsigned long pgoff, const unsigned long flags);
-
+unsigned long kbase_context_get_unmapped_area(struct kbase_context *kctx, const unsigned long addr,
+					      const unsigned long len, const unsigned long pgoff,
+					      const unsigned long flags);
 
 /**
  * kbase_get_irqs() - Get GPU interrupts from the device tree.
@@ -186,7 +192,14 @@ int kbase_get_irqs(struct kbase_device *kbdev);
 int kbase_sysfs_init(struct kbase_device *kbdev);
 void kbase_sysfs_term(struct kbase_device *kbdev);
 
-
+/**
+ * kbase_protected_mode_init() - Initialize kbase device for protected mode.
+ * @kbdev: The kbase device structure for the device (must be a valid pointer)
+ *
+ * This function must be called only when a kbase device is initialized.
+ *
+ * Return: 0 on success.
+ */
 int kbase_protected_mode_init(struct kbase_device *kbdev);
 void kbase_protected_mode_term(struct kbase_device *kbdev);
 
@@ -210,7 +223,6 @@ int kbase_device_backend_init(struct kbase_device *kbdev);
  */
 void kbase_device_backend_term(struct kbase_device *kbdev);
 
-
 int power_control_init(struct kbase_device *kbdev);
 void power_control_term(struct kbase_device *kbdev);
 
@@ -223,7 +235,9 @@ static inline int kbase_device_debugfs_init(struct kbase_device *kbdev)
 	return 0;
 }
 
-static inline void kbase_device_debugfs_term(struct kbase_device *kbdev) { }
+static inline void kbase_device_debugfs_term(struct kbase_device *kbdev)
+{
+}
 #endif /* CONFIG_DEBUG_FS */
 
 int registers_map(struct kbase_device *kbdev);
@@ -233,6 +247,14 @@ int kbase_device_coherency_init(struct kbase_device *kbdev);
 
 
 #if !MALI_USE_CSF
+/**
+ * kbase_jd_init() - Initialize kbase context for job dispatcher.
+ * @kctx:   Pointer to the kbase context to be initialized.
+ *
+ * This function must be called only when a kbase context is instantiated.
+ *
+ * Return: 0 on success.
+ */
 int kbase_jd_init(struct kbase_context *kctx);
 void kbase_jd_exit(struct kbase_context *kctx);
 
@@ -247,9 +269,8 @@ void kbase_jd_exit(struct kbase_context *kctx);
  *
  * Return: 0 on success or error code
  */
-int kbase_jd_submit(struct kbase_context *kctx,
-		void __user *user_addr, u32 nr_atoms, u32 stride,
-		bool uk6_atom);
+int kbase_jd_submit(struct kbase_context *kctx, void __user *user_addr, u32 nr_atoms, u32 stride,
+		    bool uk6_atom);
 
 /**
  * kbase_jd_done_worker - Handle a job completion
@@ -322,7 +343,7 @@ void kbase_job_done(struct kbase_device *kbdev, u32 done);
  * The hwaccess_lock must be held when calling this function.
  */
 void kbase_job_slot_ctx_priority_check_locked(struct kbase_context *kctx,
-				struct kbase_jd_atom *katom);
+					      struct kbase_jd_atom *katom);
 
 /**
  * kbase_job_slot_softstop - Soft-stop the specified job slot
@@ -363,7 +384,7 @@ void kbase_job_slot_softstop_swflags(struct kbase_device *kbdev, unsigned int js
  * state when the soft/hard-stop action is complete
  */
 void kbase_job_check_enter_disjoint(struct kbase_device *kbdev, u32 action,
-		base_jd_core_req core_reqs, struct kbase_jd_atom *target_katom);
+				    base_jd_core_req core_reqs, struct kbase_jd_atom *target_katom);
 
 /**
  * kbase_job_check_leave_disjoint - potentially leave disjoint state
@@ -373,16 +394,15 @@ void kbase_job_check_enter_disjoint(struct kbase_device *kbdev, u32 action,
  * Work out whether to leave disjoint state when finishing an atom that was
  * originated by kbase_job_check_enter_disjoint().
  */
-void kbase_job_check_leave_disjoint(struct kbase_device *kbdev,
-		struct kbase_jd_atom *target_katom);
+void kbase_job_check_leave_disjoint(struct kbase_device *kbdev, struct kbase_jd_atom *target_katom);
 
 #endif /* !MALI_USE_CSF */
 
-void kbase_event_post(struct kbase_context *ctx, struct kbase_jd_atom *event);
+void kbase_event_post(struct kbase_context *kctx, struct kbase_jd_atom *event);
 #if !MALI_USE_CSF
-int kbase_event_dequeue(struct kbase_context *ctx, struct base_jd_event_v2 *uevent);
+int kbase_event_dequeue(struct kbase_context *kctx, struct base_jd_event_v2 *uevent);
 #endif /* !MALI_USE_CSF */
-int kbase_event_pending(struct kbase_context *ctx);
+int kbase_event_pending(struct kbase_context *kctx);
 int kbase_event_init(struct kbase_context *kctx);
 void kbase_event_close(struct kbase_context *kctx);
 void kbase_event_cleanup(struct kbase_context *kctx);
@@ -397,8 +417,7 @@ void kbase_event_wakeup(struct kbase_context *kctx);
  *			which is to be validated.
  * Return: 0 if jit allocation is valid; negative error code otherwise
  */
-int kbasep_jit_alloc_validate(struct kbase_context *kctx,
-					struct base_jit_alloc_info *info);
+int kbasep_jit_alloc_validate(struct kbase_context *kctx, struct base_jit_alloc_info *info);
 
 /**
  * kbase_jit_retry_pending_alloc() - Retry blocked just-in-time memory
@@ -416,14 +435,13 @@ void kbase_jit_retry_pending_alloc(struct kbase_context *kctx);
  * @buffer:	Pointer to the memory location allocated for the object
  *		of the type struct @kbase_debug_copy_buffer.
  */
-static inline void kbase_free_user_buffer(
-		struct kbase_debug_copy_buffer *buffer)
+static inline void kbase_free_user_buffer(struct kbase_debug_copy_buffer *buffer)
 {
 	struct page **pages = buffer->extres_pages;
-	int nr_pages = buffer->nr_extres_pages;
+	uint nr_pages = buffer->nr_extres_pages;
 
 	if (pages) {
-		int i;
+		uint i;
 
 		for (i = 0; i < nr_pages; i++) {
 			struct page *pg = pages[i];
@@ -445,9 +463,7 @@ void kbasep_remove_waiting_soft_job(struct kbase_jd_atom *katom);
 #if IS_ENABLED(CONFIG_SYNC_FILE)
 void kbase_soft_event_wait_callback(struct kbase_jd_atom *katom);
 #endif
-int kbase_soft_event_update(struct kbase_context *kctx,
-			    u64 event,
-			    unsigned char new_status);
+int kbase_soft_event_update(struct kbase_context *kctx, u64 event, unsigned char new_status);
 
 void kbasep_soft_job_timeout_worker(struct timer_list *timer);
 void kbasep_complete_triggered_soft_events(struct kbase_context *kctx, u64 evt);
@@ -461,9 +477,9 @@ void kbasep_as_do_poke(struct work_struct *work);
  *
  * @kbdev: The kbase device structure for the device
  *
- * The caller should ensure that either kbdev->pm.active_count_lock is held, or
- * a dmb was executed recently (to ensure the value is most
- * up-to-date). However, without a lock the value could change afterwards.
+ * The caller should ensure that either kbase_device::kbase_pm_device_data::lock is held,
+ * or a dmb was executed recently (to ensure the value is most up-to-date).
+ * However, without a lock the value could change afterwards.
  *
  * Return: False if a suspend is not in progress, true otherwise,
  */
@@ -514,8 +530,7 @@ static inline bool kbase_pm_is_gpu_lost(struct kbase_device *kbdev)
  * state.  Once in gpu lost state new GPU jobs will no longer be
  * scheduled.
  */
-static inline void kbase_pm_set_gpu_lost(struct kbase_device *kbdev,
-	bool gpu_lost)
+static inline void kbase_pm_set_gpu_lost(struct kbase_device *kbdev, bool gpu_lost)
 {
 	const int new_val = (gpu_lost ? 1 : 0);
 	const int cur_val = atomic_xchg(&kbdev->pm.gpu_lost, new_val);
@@ -539,9 +554,11 @@ static inline bool kbase_pm_is_active(struct kbase_device *kbdev)
 }
 
 /**
- * kbase_pm_lowest_gpu_freq_init() - Find the lowest frequency that the GPU can
- *                                run as using the device tree, and save this
- *                                within kbdev.
+ * kbase_pm_gpu_freq_init() - Find the lowest frequency that the GPU can
+ *                            run as using the device tree, then query the
+ *                            GPU properties to find out the highest GPU
+ *                            frequency and store both of them within the
+ *                            @kbase_device.
  * @kbdev: Pointer to kbase device.
  *
  * This function could be called from kbase_clk_rate_trace_manager_init,
@@ -549,9 +566,9 @@ static inline bool kbase_pm_is_active(struct kbase_device *kbdev)
  * dev_pm_opp_of_add_table() has been called to initialize the OPP table,
  * which occurs in power_control_init().
  *
- * Return: 0 in any case.
+ * Return: 0 on success, negative error code on failure.
  */
-int kbase_pm_lowest_gpu_freq_init(struct kbase_device *kbdev);
+int kbase_pm_gpu_freq_init(struct kbase_device *kbdev);
 
 /**
  * kbase_pm_metrics_start - Start the utilization metrics timer
@@ -641,8 +658,7 @@ static inline unsigned int kbase_jd_atom_id(struct kbase_context *kctx,
  *
  * Return: Pointer to struct kbase_jd_atom associated with the supplied ID
  */
-static inline struct kbase_jd_atom *kbase_jd_atom_from_id(
-		struct kbase_context *kctx, int id)
+static inline struct kbase_jd_atom *kbase_jd_atom_from_id(struct kbase_context *kctx, int id)
 {
 	return &kctx->jctx.atoms[id];
 }
@@ -672,6 +688,8 @@ static inline struct kbase_jd_atom *kbase_jd_atom_from_id(
  *
  * The disjoint event counter is also incremented immediately whenever a job is soft stopped
  * and during context creation.
+ *
+ * This function must be called only when a kbase device is initialized.
  *
  * Return: 0 on success and non-zero value on failure.
  */
@@ -774,7 +792,7 @@ bool kbasep_adjust_prioritized_process(struct kbase_device *kbdev, bool add, uin
 #define KBASE_DISJOINT_STATE_INTERLEAVED_CONTEXT_COUNT_THRESHOLD 2
 
 #if !defined(UINT64_MAX)
-	#define UINT64_MAX ((uint64_t)0xFFFFFFFFFFFFFFFFULL)
+#define UINT64_MAX ((uint64_t)0xFFFFFFFFFFFFFFFFULL)
 #endif
 
 #if !defined(UINT32_MAX)
