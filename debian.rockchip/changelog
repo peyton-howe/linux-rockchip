@@ -1,8 +1,8 @@
-linux-rockchip (6.1.0-1028.28) noble; urgency=medium
+linux-rockchip (6.1.115-1) questing; urgency=medium
 
-  * Merge latest kernel changes from armbian (vendor kernel v6.1.115)
+  * Merge latest Armbian 6.1 kernel
 
- -- Peyton Howe <peyton.howe@bellsouth.net>  Thu, 14 Aug 2025 02:45:00 -0400
+ -- Peyton Howe <peyton.howe@bellsouth.net>  Thu, 06 Nov 2025 00:12:42 -0800
 
 inux-rockchip (6.1.0-1027.27) noble; urgency=medium
 

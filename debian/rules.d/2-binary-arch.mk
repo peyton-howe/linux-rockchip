@@ -5,9 +5,11 @@
 ifeq ($(do_full_source),true)
 build_cd = cd $(builddir)/build-$*; #
 build_O  =
+build_O_dir =
 else
 build_cd =
 build_O  = O=$(builddir)/build-$*
+build_O_dir = $(builddir)/build-$*
 endif
 
 # TODO this is probably wrong, and should be using $(DEB_HOST_MULTIARCH)
@@ -50,8 +52,16 @@ build-%: $(stampdir)/stamp-install-%
 $(stampdir)/stamp-build-%: target_flavour = $*
 $(stampdir)/stamp-build-%: bldimg = $(call custom_override,build_image,$*)
 $(stampdir)/stamp-build-%: $(stampdir)/stamp-prepare-%
-	@echo Debug: $@ build_image $(build_image) bldimg $(bldimg)
-	$(build_cd) $(kmake) $(build_O) $(conc_level) $(bldimg) modules $(if $(filter true,$(do_dtbs)),dtbs)
+	@echo Debug: $@ build_image $(build_image) bldimg $(bldimg) build_O $(build_O) curdir $(CURDIR)
+
+	@mkdir -p $(build_O_dir)/drivers/gpu/arm/bifrost
+	@cp -u $(CURDIR)/drivers/gpu/arm/bifrost/*.bin $(build_O_dir)/drivers/gpu/arm/bifrost/ 2>/dev/null || true
+
+	# Run the actual kernel build *outside* fakeroot to avoid LD_PRELOAD bottlenecks
+	$(build_cd) env -u FAKEROOTKEY -u FAKEROOT_ENV -u LD_PRELOAD \
+		$(kmake) $(build_O) $(conc_level) $(bldimg) modules $(if $(filter true,$(do_dtbs)),dtbs)
+	# Touch the stamp file inside fakeroot context (still tracked properly)
+	touch $@
 
 ifneq ($(skipdbg),true)
 	# The target scripts_gdb is part of "all", so we need to call it manually
