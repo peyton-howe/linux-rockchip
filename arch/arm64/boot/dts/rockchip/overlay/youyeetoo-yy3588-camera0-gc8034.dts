@@ -2,48 +2,50 @@
 /plugin/;
 
 #include <dt-bindings/clock/rk3588-cru.h>
-#include <dt-bindings/power/rk3588-power.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/power/rk3588-power.h>
 
 / {
 	metadata {
-		title ="Enable Radxa Camera 4K on CAM0";
-		compatible = "radxa,rock-5b-plus";
+		title = "Enable GC8034 Camera 0 on Youyeetoo YY3588";
+		compatible = "youyeetoo,yy3588";
 		category = "camera";
-		exclusive = "csi2_dphy0";
-		description = "Enable Radxa Camera 4K on CAM0.";
+		description = "Enable GC8034 8MP camera sensor on CSI0 (front camera)";
 	};
-};
 
-/ {
 	fragment@0 {
-		target = <&i2c3>;
+		target = <&i2c2>;
 
 		__overlay__ {
 			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c2m4_xfer>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			imx415: imx415@1a {
+			gc8034_0: gc8034@37 {
 				status = "okay";
-				compatible = "sony,imx415";
-				reg = <0x1a>;
-				clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
+				compatible = "galaxycore,gc8034";
+				reg = <0x37>;
+				clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
 				clock-names = "xvclk";
-				pinctrl-names = "default";
-				pinctrl-0 = <&mipim0_camera3_clk>;
 				power-domains = <&power RK3588_PD_VI>;
-				pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
-				reset-gpios = <&gpio4 RK_PA0 GPIO_ACTIVE_LOW>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&mipim0_camera1_clk>;
+				rockchip,grf = <&sys_grf>;
+				reset-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;
+				pwdn-gpios = <&gpio1 RK_PB1 GPIO_ACTIVE_LOW>;
+				power-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+
 				rockchip,camera-module-index = <0>;
 				rockchip,camera-module-facing = "front";
-				rockchip,camera-module-name = "RADXA-CAMERA-4K";
-				rockchip,camera-module-lens-name = "DEFAULT";
+				rockchip,camera-module-name = "RK-CMK-8M-2-v1";
+				rockchip,camera-module-lens-name = "CK8401";
 
 				port {
-					imx415_out0: endpoint {
-						remote-endpoint = <&mipidphy0_in_ucam0>;
+					gc8034_0_out: endpoint {
+						remote-endpoint = <&mipi_in_dcphy0>;
 						data-lanes = <1 2 3 4>;
 					};
 				};
@@ -52,7 +54,7 @@
 	};
 
 	fragment@1 {
-		target = <&csi2_dphy0_hw>;
+		target = <&mipi_dcphy0>;
 
 		__overlay__ {
 			status = "okay";
@@ -60,7 +62,7 @@
 	};
 
 	fragment@2 {
-		target = <&csi2_dphy0>;
+		target = <&csi2_dcphy0>;
 
 		__overlay__ {
 			status = "okay";
@@ -74,9 +76,9 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					mipidphy0_in_ucam0: endpoint@1 {
+					mipi_in_dcphy0: endpoint@1 {
 						reg = <1>;
-						remote-endpoint = <&imx415_out0>;
+						remote-endpoint = <&gc8034_0_out>;
 						data-lanes = <1 2 3 4>;
 					};
 				};
@@ -86,9 +88,9 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					csidphy0_out: endpoint@0 {
+					csidcphy0_out: endpoint@0 {
 						reg = <0>;
-						remote-endpoint = <&mipi2_csi2_input>;
+						remote-endpoint = <&mipi0_csi2_input>;
 					};
 				};
 			};
@@ -96,7 +98,7 @@
 	};
 
 	fragment@3 {
-		target = <&mipi2_csi2>;
+		target = <&mipi0_csi2>;
 
 		__overlay__ {
 			status = "okay";
@@ -110,9 +112,9 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					mipi2_csi2_input: endpoint@1 {
+					mipi0_csi2_input: endpoint@1 {
 						reg = <1>;
-						remote-endpoint = <&csidphy0_out>;
+						remote-endpoint = <&csidcphy0_out>;
 					};
 				};
 
@@ -121,9 +123,9 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 
-					mipi2_csi2_output: endpoint@0 {
+					mipi0_csi2_output: endpoint@0 {
 						reg = <0>;
-						remote-endpoint = <&cif_mipi2_in0>;
+						remote-endpoint = <&cif_mipi_in0>;
 					};
 				};
 			};
@@ -131,38 +133,38 @@
 	};
 
 	fragment@4 {
-		target = <&rkcif>;
-
-		__overlay__ {
-			status = "okay";
-		};
-	};
-
-	fragment@5 {
-		target = <&rkcif_mipi_lvds2>;
+		target = <&rkcif_mipi_lvds>;
 
 		__overlay__ {
 			status = "okay";
 
 			port {
-				cif_mipi2_in0: endpoint {
-					remote-endpoint = <&mipi2_csi2_output>;
+				cif_mipi_in0: endpoint {
+					remote-endpoint = <&mipi0_csi2_output>;
+				};
+			};
+		};
+	};
+
+	fragment@5 {
+		target = <&rkcif_mipi_lvds_sditf>;
+
+		__overlay__ {
+			status = "okay";
+
+			port {
+				mipi_lvds_sditf: endpoint {
+					remote-endpoint = <&isp0_vir0_in>;
 				};
 			};
 		};
 	};
 
 	fragment@6 {
-		target = <&rkcif_mipi_lvds2_sditf>;
+		target = <&rkcif>;
 
 		__overlay__ {
 			status = "okay";
-
-			port {
-				mipi_lvds2_sditf: endpoint {
-					remote-endpoint = <&isp0_vir0>;
-				};
-			};
 		};
 	};
 
@@ -175,7 +177,7 @@
 	};
 
 	fragment@8 {
-		target = <&isp0_mmu>;
+		target = <&rkisp0>;
 
 		__overlay__ {
 			status = "okay";
@@ -183,7 +185,7 @@
 	};
 
 	fragment@9 {
-		target = <&rkisp0>;
+		target = <&isp0_mmu>;
 
 		__overlay__ {
 			status = "okay";
@@ -200,9 +202,24 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				isp0_vir0: endpoint@0 {
+				isp0_vir0_in: endpoint@0 {
 					reg = <0>;
-					remote-endpoint = <&mipi_lvds2_sditf>;
+					remote-endpoint = <&mipi_lvds_sditf>;
+				};
+			};
+		};
+	};
+
+	fragment@11 {
+		target = <&pinctrl>;
+
+		__overlay__ {
+			camera {
+				camera0_ctl: camera0-ctl {
+					rockchip,pins =
+						<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>,
+						<1 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>,
+						<1 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
 				};
 			};
 		};
