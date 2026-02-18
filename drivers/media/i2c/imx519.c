@@ -26,6 +26,7 @@
 #include "../platform/rockchip/isp/rkisp_tb_helper.h"
 
 #define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x01)
+#define IMX519_LANES  2
 
 #define IMX519_REG_VALUE_08BIT		1
 #define IMX519_REG_VALUE_16BIT		2
@@ -1102,7 +1103,7 @@ static int imx519_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx519 *imx519 = to_imx519(sd);
 	struct v4l2_mbus_framefmt *try_fmt_img =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	struct v4l2_rect *try_crop;
 
@@ -1115,7 +1116,7 @@ static int imx519_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	try_fmt_img->field = V4L2_FIELD_NONE;
 
 	/* Initialize try_crop */
-	try_crop = v4l2_subdev_get_try_crop(sd, fh->pad, 0);
+	try_crop = v4l2_subdev_get_try_crop(sd, fh->state, 0);
 	try_crop->left = IMX519_PIXEL_ARRAY_LEFT;
 	try_crop->top = IMX519_PIXEL_ARRAY_TOP;
 	try_crop->width = IMX519_PIXEL_ARRAY_WIDTH;
@@ -1243,7 +1244,7 @@ static const struct v4l2_ctrl_ops imx519_ctrl_ops = {
 };
 
 static int imx519_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct imx519 *imx519 = to_imx519(sd);
@@ -1257,7 +1258,7 @@ static int imx519_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx519_enum_frame_size(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct imx519 *imx519 = to_imx519(sd);
@@ -1298,7 +1299,7 @@ static void imx519_update_image_pad_format(struct imx519 *imx519,
 }
 
 static int imx519_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct imx519 *imx519 = to_imx519(sd);
@@ -1307,7 +1308,7 @@ static int imx519_get_pad_format(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(&imx519->sd, cfg,
+			v4l2_subdev_get_try_format(&imx519->sd, sd_state,
 						   fmt->pad);
 		/* update the code which could change due to vflip or hflip: */
 		try_fmt->code = imx519_get_format_code(imx519);
@@ -1370,7 +1371,7 @@ static void imx519_set_framing_limits(struct imx519 *imx519)
 }
 
 static int imx519_set_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *framefmt;
@@ -1389,7 +1390,7 @@ static int imx519_set_pad_format(struct v4l2_subdev *sd,
 						fmt->format.height);
 	imx519_update_image_pad_format(imx519, mode, fmt);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		framefmt = v4l2_subdev_get_try_format(sd, cfg,
+		framefmt = v4l2_subdev_get_try_format(sd, sd_state,
 								fmt->pad);
 		*framefmt = fmt->format;
 	} else {
@@ -1633,6 +1634,16 @@ static void imx519_get_module_inf(struct imx519 *imx519,
 	strlcpy(inf->base.lens, imx519->len_name, sizeof(inf->base.lens));
 }
 
+static int imx519_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
+				struct v4l2_mbus_config *config)
+{
+
+	config->type = V4L2_MBUS_CSI2_DPHY;
+	config->bus.mipi_csi2.num_data_lanes = IMX519_LANES;
+
+	return 0;
+}
+
 static int imx519_get_channel_info(struct imx519 *imx519, struct rkmodule_channel_info *ch_info)
 {
 	if (ch_info->index < PAD0 || ch_info->index >= PAD_MAX)
@@ -1641,7 +1652,6 @@ static int imx519_get_channel_info(struct imx519 *imx519, struct rkmodule_channe
 	ch_info->width = imx519->mode->width;
 	ch_info->height = imx519->mode->height;
 	ch_info->bus_fmt = imx519->fmt_code;
-	ch_info->vc = V4L2_MBUS_CSI2_CHANNEL_0;
 
 	return 0;
 }
@@ -1770,6 +1780,7 @@ static const struct v4l2_subdev_pad_ops imx519_pad_ops = {
 	.get_fmt = imx519_get_pad_format,
 	.set_fmt = imx519_set_pad_format,
 	.enum_frame_size = imx519_enum_frame_size,
+	.get_mbus_config = imx519_g_mbus_config,
 
 };
 
@@ -2082,7 +2093,7 @@ static int imx519_probe(struct i2c_client *client,
 	snprintf(imx519->sd.name, sizeof(imx519->sd.name),
 		 "m%02d_%s_%s %s", imx519->module_index, facing,
 		 IMX519_NAME, dev_name(imx519->sd.dev));
-	ret = v4l2_async_register_subdev_sensor_common(&imx519->sd);
+	ret = v4l2_async_register_subdev_sensor(&imx519->sd);
 	if (ret < 0) {
 		dev_err(dev, "failed to register sensor sub-device: %d\n", ret);
 		goto error_media_entity;
@@ -2104,7 +2115,7 @@ error_power_off:
 	return ret;
 }
 
-static int imx519_remove(struct i2c_client *client)
+static void imx519_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx519 *imx519 = to_imx519(sd);
@@ -2117,7 +2128,6 @@ static int imx519_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		imx519_power_off(&client->dev);
 	pm_runtime_set_suspended(&client->dev);
-    return 0;
 }
 
 
@@ -2131,8 +2141,8 @@ static struct i2c_driver imx519_i2c_driver = {
 		.of_match_table	= of_match_ptr(imx519_of_match),
 		.pm = &imx519_pm_ops,
 	},
-	.probe = imx519_probe,
-	.remove = imx519_remove,
+	.probe = &imx519_probe,
+	.remove = &imx519_remove,
 	.id_table	= imx519_match_id,
 
 };
