@@ -10,6 +10,7 @@
 #include <media/v4l2-device.h>
 
 #define AK7375_MAX_FOCUS_POS	4095
+#define AK7375_NAME			"ak7375"
 /*
  * This sets the minimum granularity for the focus positions.
  * A value of 1 gives maximum accuracy for a desired focus position
@@ -36,6 +37,9 @@ struct ak7375_device {
 	struct v4l2_ctrl *focus;
 	/* active or standby mode */
 	bool active;
+
+	u32 module_index;
+	const char *module_facing;
 };
 
 static inline struct ak7375_device *to_ak7375_vcm(struct v4l2_ctrl *ctrl)
@@ -129,6 +133,34 @@ static int ak7375_init_controls(struct ak7375_device *dev_vcm)
 	return hdl->error;
 }
 
+static int ak7375_parse_dt(struct i2c_client *client,
+			  struct ak7375_device *ak7375_dev)
+{
+	struct device_node *np = client->dev.of_node;
+	int ret = 0;
+
+	ret = of_property_read_u32(np, "rockchip,camera-module-index",
+				   &ak7375_dev->module_index);
+	if (ret) {
+		dev_info(&client->dev,
+			 "could not get module index, use default 0\n");
+		ak7375_dev->module_index = 0;
+	}
+
+	ret = of_property_read_string(np, "rockchip,camera-module-facing",
+					&ak7375_dev->module_facing);
+	if (ret) {
+		dev_info(&client->dev,
+			 "could not get module facing, use default back\n");
+		ak7375_dev->module_facing = "back";
+	}
+
+	dev_info(&client->dev, "module_index=%u, module_facing=%s\n",
+		 ak7375_dev->module_index, ak7375_dev->module_facing);
+
+	return 0;
+}
+
 static int ak7375_probe(struct i2c_client *client)
 {
 	struct ak7375_device *ak7375_dev;
@@ -139,10 +171,28 @@ static int ak7375_probe(struct i2c_client *client)
 	if (!ak7375_dev)
 		return -ENOMEM;
 
+	/* Parse device tree properties for module info */
+    ak7375_parse_dt(client, ak7375_dev);
+
 	v4l2_i2c_subdev_init(&ak7375_dev->sd, client, &ak7375_ops);
 	ak7375_dev->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	ak7375_dev->sd.internal_ops = &ak7375_int_ops;
 	ak7375_dev->sd.entity.function = MEDIA_ENT_F_LENS;
+
+	/* Set subdev name following dw9714 convention: m%02d_%s_%s %s */
+	{
+		char facing[2] = {0};
+
+		if (strcmp(ak7375_dev->module_facing, "back") == 0)
+			facing[0] = 'b';
+		else
+			facing[0] = 'f';
+
+		snprintf(ak7375_dev->sd.name, sizeof(ak7375_dev->sd.name),
+				"m%02d_%s_%s %s",
+				ak7375_dev->module_index, facing,
+				AK7375_NAME, dev_name(&client->dev));
+	}
 
 	ret = ak7375_init_controls(ak7375_dev);
 	if (ret)
