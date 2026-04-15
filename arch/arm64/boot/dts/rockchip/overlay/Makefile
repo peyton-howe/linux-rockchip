@@ -84,6 +84,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	rock-5b-plus-cam0-radxa-camera-4k.dtbo \
 	rock-5b-plus-cam1-radxa-camera-4k.dtbo \
 	rock-5b-plus-radxa-display-8hd.dtbo \
+	rock-5b-plus-radxa-display-10fhd.dtbo \
 	rock-5t-radxa-display-10fhd.dtbo \
 	rock-5-itx-radxa-camera-4k-on-cam0.dtbo \
 	rock-5-itx-radxa-camera-4k-on-cam1.dtbo \
@@ -306,7 +307,32 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3568-uart8-m1.dtbo \
 	rk3568-uart9-m1.dtbo \
 	rk3568-w1-gpio3-a5.dtbo \
-	rk3568-w1-gpio3-d1.dtbo
+	rk3568-w1-gpio3-d1.dtbo \
+	recomputer-rk3576-devkit-raspi-7inch-touchscreen.dtbo \
+	recomputer-rk3576-devkit-40pin-pwm2-ch6.dtbo \
+	recomputer-rk3576-devkit-40pin-can0.dtbo \
+	recomputer-rk3576-devkit-40pin-can1.dtbo \
+	recomputer-rk3576-devkit-40pin-i2c3.dtbo \
+	recomputer-rk3576-devkit-40pin-uart3.dtbo \
+	recomputer-rk3576-devkit-40pin-uart5.dtbo \
+	recomputer-rk3576-devkit-halow-wifi.dtbo \
+	recomputer-rk3576-devkit-cam0-rpi-v2.dtbo \
+	recomputer-rk3576-devkit-cam0-rpi-v3.dtbo \
+	recomputer-rk3576-devkit-cam1-rpi-v2.dtbo \
+	recomputer-rk3576-devkit-cam1-rpi-v3.dtbo \
+	recomputer-rk3576-devkit-dp-4k.dtbo \
+	recomputer-rk3588-devkit-40pin-i2c3.dtbo \
+	recomputer-rk3588-devkit-40pin-pwm0_m1.dtbo \
+	recomputer-rk3588-devkit-40pin-pwm14.dtbo \
+	recomputer-rk3588-devkit-40pin-pwm15IR_m3.dtbo \
+	recomputer-rk3588-devkit-40pin-pwm1_m1.dtbo \
+	recomputer-rk3588-devkit-40pin-uart4.dtbo \
+	recomputer-rk3588-devkit-cam0-rpi-v2.dtbo \
+	recomputer-rk3588-devkit-cam0-rpi-v3.dtbo \
+	recomputer-rk3588-devkit-cam1-rpi-v2.dtbo \
+	recomputer-rk3588-devkit-cam1-rpi-v3.dtbo \
+	recomputer-rk3588-devkit-halow-wifi.dtbo \
+	recomputer-rk3588-devkit-raspi-7inch-touchscreen.dtbo
 
 dtbotxt-$(CONFIG_ARCH_ROCKCHIP) += \
 	README.rockchip-overlays
