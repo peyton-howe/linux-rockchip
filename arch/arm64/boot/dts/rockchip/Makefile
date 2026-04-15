@@ -387,6 +387,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-friendlyelec-cm3588-nas.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nanopc-cm3588-nas.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nanopc-t6.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nanopc-t6-lts.dtb
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nanopc-t6-lts-plus.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nvr-demo-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nvr-demo-v10-android.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-nvr-demo-v10-ipc-4x-linux.dtb
@@ -417,6 +418,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-vehicle-evb-v22.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-vehicle-evb-v23.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-vehicle-s66-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-yx-imb3588.dtb
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-blueberry-rp01a-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-evb1-lp4x-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-evb1-lp4x-v10-linux.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-evb2-lp5-v10.dtb
@@ -455,7 +457,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-tablet-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588s-tablet-v11.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-luckfox-core3566.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-roc-pc.dtb
-
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3576-recomputer-rk3576-devkit.dtb
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-recomputer-rk3588-devkit.dtb
 subdir-y := $(dts-dirs) overlay
 
 # Armbian: Incremental: assuming overlay targets are already in the Makefile
