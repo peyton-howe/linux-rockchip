@@ -2,15 +2,19 @@
 // Copyright (C) 2018 Intel Corporation
 
 #include <linux/acpi.h>
+#include <linux/compat.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/rk-camera-module.h>
+#include <linux/rk_vcm_head.h>
+#include <linux/timekeeping.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 
+#define AK7375_NAME		"ak7375"
 #define AK7375_MAX_FOCUS_POS	4095
-#define AK7375_NAME			"ak7375"
 /*
  * This sets the minimum granularity for the focus positions.
  * A value of 1 gives maximum accuracy for a desired focus position
@@ -38,6 +42,12 @@ struct ak7375_device {
 	/* active or standby mode */
 	bool active;
 
+	/* Rockchip VCM timing support */
+	unsigned short current_lens_pos;
+	unsigned int vcm_movefull_t;
+	struct __kernel_old_timeval start_move_tv;
+	struct __kernel_old_timeval end_move_tv;
+	unsigned long move_ms;
 	u32 module_index;
 	const char *module_facing;
 };
@@ -77,10 +87,34 @@ static int ak7375_i2c_write(struct ak7375_device *ak7375,
 static int ak7375_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ak7375_device *dev_vcm = to_ak7375_vcm(ctrl);
+	int move_pos;
+	long mv_us;
+	int ret;
 
-	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE)
-		return ak7375_i2c_write(dev_vcm, AK7375_REG_POSITION,
-					ctrl->val << 4, 2);
+	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE) {
+		move_pos = abs((int)dev_vcm->current_lens_pos - ctrl->val);
+		ret = ak7375_i2c_write(dev_vcm, AK7375_REG_POSITION,
+				       ctrl->val << 4, 2);
+		if (ret)
+			return ret;
+		dev_vcm->current_lens_pos = ctrl->val;
+		dev_vcm->move_ms = (unsigned long)(
+			(u64)dev_vcm->vcm_movefull_t * move_pos /
+			AK7375_MAX_FOCUS_POS);
+		dev_vcm->start_move_tv = ns_to_kernel_old_timeval(ktime_get_ns());
+		mv_us = dev_vcm->start_move_tv.tv_usec +
+			dev_vcm->move_ms * 1000;
+		if (mv_us >= 1000000) {
+			dev_vcm->end_move_tv.tv_sec =
+				dev_vcm->start_move_tv.tv_sec + 1;
+			dev_vcm->end_move_tv.tv_usec = mv_us - 1000000;
+		} else {
+			dev_vcm->end_move_tv.tv_sec =
+				dev_vcm->start_move_tv.tv_sec;
+			dev_vcm->end_move_tv.tv_usec = mv_us;
+		}
+		return 0;
+	}
 
 	return -EINVAL;
 }
@@ -106,7 +140,68 @@ static const struct v4l2_subdev_internal_ops ak7375_int_ops = {
 	.close = ak7375_close,
 };
 
-static const struct v4l2_subdev_ops ak7375_ops = { };
+static long ak7375_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	struct ak7375_device *dev_vcm = sd_to_ak7375_vcm(sd);
+	struct rk_cam_vcm_tim *vcm_tim;
+
+	if (cmd == RK_VIDIOC_VCM_TIMEINFO) {
+		vcm_tim = (struct rk_cam_vcm_tim *)arg;
+		vcm_tim->vcm_start_t.tv_sec = dev_vcm->start_move_tv.tv_sec;
+		vcm_tim->vcm_start_t.tv_usec = dev_vcm->start_move_tv.tv_usec;
+		vcm_tim->vcm_end_t.tv_sec = dev_vcm->end_move_tv.tv_sec;
+		vcm_tim->vcm_end_t.tv_usec = dev_vcm->end_move_tv.tv_usec;
+		return 0;
+	}
+
+	dev_err(sd->dev, "cmd 0x%x not supported\n", cmd);
+	return -EINVAL;
+}
+
+#ifdef CONFIG_COMPAT
+static long ak7375_compat_ioctl32(struct v4l2_subdev *sd,
+				  unsigned int cmd, unsigned long arg)
+{
+	void __user *up = compat_ptr(arg);
+	struct rk_cam_compat_vcm_tim compat_vcm_tim;
+	struct rk_cam_vcm_tim vcm_tim;
+	long ret;
+
+	if (cmd == RK_VIDIOC_COMPAT_VCM_TIMEINFO) {
+		struct rk_cam_compat_vcm_tim __user *p32 = up;
+
+		ret = ak7375_ioctl(sd, RK_VIDIOC_VCM_TIMEINFO, &vcm_tim);
+		compat_vcm_tim.vcm_start_t.tv_sec = vcm_tim.vcm_start_t.tv_sec;
+		compat_vcm_tim.vcm_start_t.tv_usec = vcm_tim.vcm_start_t.tv_usec;
+		compat_vcm_tim.vcm_end_t.tv_sec = vcm_tim.vcm_end_t.tv_sec;
+		compat_vcm_tim.vcm_end_t.tv_usec = vcm_tim.vcm_end_t.tv_usec;
+
+		put_user(compat_vcm_tim.vcm_start_t.tv_sec,
+			 &p32->vcm_start_t.tv_sec);
+		put_user(compat_vcm_tim.vcm_start_t.tv_usec,
+			 &p32->vcm_start_t.tv_usec);
+		put_user(compat_vcm_tim.vcm_end_t.tv_sec,
+			 &p32->vcm_end_t.tv_sec);
+		put_user(compat_vcm_tim.vcm_end_t.tv_usec,
+			 &p32->vcm_end_t.tv_usec);
+		return ret;
+	}
+
+	dev_err(sd->dev, "cmd 0x%x not supported\n", cmd);
+	return -EINVAL;
+}
+#endif
+
+static const struct v4l2_subdev_core_ops ak7375_core_ops = {
+	.ioctl = ak7375_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl32 = ak7375_compat_ioctl32,
+#endif
+};
+
+static const struct v4l2_subdev_ops ak7375_ops = {
+	.core = &ak7375_core_ops,
+};
 
 static void ak7375_subdev_cleanup(struct ak7375_device *ak7375_dev)
 {
@@ -161,37 +256,70 @@ static int ak7375_parse_dt(struct i2c_client *client,
 	return 0;
 }
 
+static int ak7375_i2c_read(struct i2c_client *client, u8 addr, u8 *val)
+{
+	int ret;
+
+	ret = i2c_master_send(client, &addr, 1);
+	if (ret < 0)
+		return ret;
+	ret = i2c_master_recv(client, val, 1);
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
 static int ak7375_probe(struct i2c_client *client)
 {
 	struct ak7375_device *ak7375_dev;
+	char facing[2];
+	u8 reg_val;
 	int ret;
+
+	dev_info(&client->dev, "ak7375 probing at I2C addr 0x%02x\n",
+		 client->addr);
 
 	ak7375_dev = devm_kzalloc(&client->dev, sizeof(*ak7375_dev),
 				  GFP_KERNEL);
 	if (!ak7375_dev)
 		return -ENOMEM;
 
-	/* Parse device tree properties for module info */
-    ak7375_parse_dt(client, ak7375_dev);
+	/* Verify device responds on I2C before registering subdev */
+	ret = ak7375_i2c_read(client, AK7375_REG_CONT, &reg_val);
+	if (ret < 0) {
+		dev_err(&client->dev,
+			"ak7375 not found or I2C error (ret=%d) — check wiring and I2C address\n",
+			ret);
+		return -ENODEV;
+	}
+	dev_info(&client->dev, "ak7375 CONT reg=0x%02x (0x40=standby, 0x00=active)\n",
+		 reg_val);
 
 	v4l2_i2c_subdev_init(&ak7375_dev->sd, client, &ak7375_ops);
 	ak7375_dev->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	ak7375_dev->sd.internal_ops = &ak7375_int_ops;
 	ak7375_dev->sd.entity.function = MEDIA_ENT_F_LENS;
+	dev_info(&client->dev, "ak7375 subdev initialized\n");
 
-	/* Set subdev name following dw9714 convention: m%02d_%s_%s %s */
-	{
-		char facing[2] = {0};
+	/* Default full-range move time; overridable from DT */
+	ak7375_dev->vcm_movefull_t = 200;
+	of_property_read_u32(client->dev.of_node, "rockchip,vcm-move-time-ms",
+			     &ak7375_dev->vcm_movefull_t);
 
-		if (strcmp(ak7375_dev->module_facing, "back") == 0)
-			facing[0] = 'b';
-		else
-			facing[0] = 'f';
-
+	/* Optional Rockchip module index/facing for subdev naming */
+	if (!of_property_read_u32(client->dev.of_node,
+				  RKMODULE_CAMERA_MODULE_INDEX,
+				  &ak7375_dev->module_index) &&
+	    !of_property_read_string(client->dev.of_node,
+				     RKMODULE_CAMERA_MODULE_FACING,
+				     &ak7375_dev->module_facing)) {
+		memset(facing, 0, sizeof(facing));
+		facing[0] = (strcmp(ak7375_dev->module_facing, "back") == 0) ?
+			     'b' : 'f';
 		snprintf(ak7375_dev->sd.name, sizeof(ak7375_dev->sd.name),
-				"m%02d_%s_%s %s",
-				ak7375_dev->module_index, facing,
-				AK7375_NAME, dev_name(&client->dev));
+			 "m%02d_%s_%s %s",
+			 ak7375_dev->module_index, facing,
+			 AK7375_NAME, dev_name(&client->dev));
 	}
 
 	ret = ak7375_init_controls(ak7375_dev);
@@ -206,16 +334,23 @@ static int ak7375_probe(struct i2c_client *client)
 	if (ret < 0)
 		goto err_cleanup;
 
+	/* Initialize move timestamps */
+	ak7375_dev->start_move_tv = ns_to_kernel_old_timeval(ktime_get_ns());
+	ak7375_dev->end_move_tv = ak7375_dev->start_move_tv;
+
 	pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
+	dev_info(&client->dev, "ak7375 probe success, subdev: %s\n",
+		 ak7375_dev->sd.name);
 	return 0;
 
 err_cleanup:
 	v4l2_ctrl_handler_free(&ak7375_dev->ctrls_vcm);
 	media_entity_cleanup(&ak7375_dev->sd.entity);
 
+	dev_err(&client->dev, "ak7375 probe failed: %d\n", ret);
 	return ret;
 }
 
